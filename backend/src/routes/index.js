@@ -56,35 +56,42 @@ router.put('/users/:id', authenticate, authorize('admin'), updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), deleteUser);
 router.get('/roles', authenticate, authorize('admin'), getRoles);
 
-// DIAGNÓSTICO TEMPORAL
-router.get('/debug-auth', async (req, res) => {
+
+// DIAGNÓSTICO LOGIN TEMPORAL
+router.get('/debug-login', async (req, res) => {
   const bcrypt = require('bcryptjs');
-  const { User } = require('../models');
+  const { User, Role } = require('../models');
   
   try {
-    // Generar hash nuevo
-    const newHash = await bcrypt.hash('Admin1234', 10);
+    // 1. Buscar usuario
+    const user = await User.findOne({ 
+      where: { email: 'admin@cafeteria.com' },
+      include: [{ model: Role, as: 'role' }]
+    });
     
-    // Actualizar en BD
-    await User.update(
-      { password: newHash },
-      { where: { email: 'admin@cafeteria.com' } }
-    );
+    if (!user) return res.json({ error: 'Usuario no encontrado en BD' });
     
-    // Leer el usuario actualizado directamente
-    const user = await User.findOne({ where: { email: 'admin@cafeteria.com' } });
+    // 2. Mostrar estado actual
+    const hashEnBD = user.password;
     
-    // Comparar
-    const match = await bcrypt.compare('Admin1234', user.password);
+    // 3. Comparar con varias contraseñas
+    const tests = ['Admin1234', 'admin123', 'password', 'Admin1234!'];
+    const results = {};
+    for (const pwd of tests) {
+      results[pwd] = await bcrypt.compare(pwd, hashEnBD);
+    }
     
     res.json({
-      newHash,
-      hashEnBD: user.password,
-      sonIguales: newHash === user.password,
-      compareResult: match
+      usuarioEncontrado: true,
+      email: user.email,
+      activo: user.active,
+      rol: user.role?.name,
+      hashEnBD: hashEnBD,
+      hashPrefix: hashEnBD.substring(0, 7),
+      comparaciones: results
     });
   } catch (err) {
-    res.json({ error: err.message });
+    res.json({ error: err.message, stack: err.stack });
   }
 });
 
