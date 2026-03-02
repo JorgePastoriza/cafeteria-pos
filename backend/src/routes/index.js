@@ -56,4 +56,13 @@ router.put('/users/:id', authenticate, authorize('admin'), updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), deleteUser);
 router.get('/roles', authenticate, authorize('admin'), getRoles);
 
+// TEMPORAL - borrar después de usarlo
+router.get('/reset-password-temp', async (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const { User } = require('../models');
+  const hash = await bcrypt.hash('Admin1234', 10);
+  await User.update({ password: hash }, { where: { email: 'admin@cafeteria.com' } });
+  res.json({ ok: true, message: 'Password actualizado' });
+});
+
 module.exports = router;
