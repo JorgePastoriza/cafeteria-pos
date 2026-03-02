@@ -17,9 +17,14 @@ const User = sequelize.define('User', {
       if (user.password) user.password = await bcrypt.hash(user.password, 10);
     },
     beforeUpdate: async (user) => {
-      if (user.changed('password')) user.password = await bcrypt.hash(user.password, 10);
+	if (user.changed('password')) {
+		const isAlreadyHashed = user.password.startsWith('$2');
+		if (!isAlreadyHashed) {
+			user.password = await bcrypt.hash(user.password, 10);
+		}
+	}
+	}
     }
-  }
 });
 
 User.prototype.validatePassword = async function(password) {
