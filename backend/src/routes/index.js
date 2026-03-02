@@ -56,13 +56,36 @@ router.put('/users/:id', authenticate, authorize('admin'), updateUser);
 router.delete('/users/:id', authenticate, authorize('admin'), deleteUser);
 router.get('/roles', authenticate, authorize('admin'), getRoles);
 
-// TEMPORAL - borrar después de usarlo
-router.get('/reset-password-temp', async (req, res) => {
+// DIAGNÓSTICO TEMPORAL
+router.get('/debug-auth', async (req, res) => {
   const bcrypt = require('bcryptjs');
   const { User } = require('../models');
-  const hash = await bcrypt.hash('Admin1234', 10);
-  await User.update({ password: hash }, { where: { email: 'admin@cafeteria.com' } });
-  res.json({ ok: true, message: 'Password actualizado' });
+  
+  try {
+    // Generar hash nuevo
+    const newHash = await bcrypt.hash('Admin1234', 10);
+    
+    // Actualizar en BD
+    await User.update(
+      { password: newHash },
+      { where: { email: 'admin@cafeteria.com' } }
+    );
+    
+    // Leer el usuario actualizado directamente
+    const user = await User.findOne({ where: { email: 'admin@cafeteria.com' } });
+    
+    // Comparar
+    const match = await bcrypt.compare('Admin1234', user.password);
+    
+    res.json({
+      newHash,
+      hashEnBD: user.password,
+      sonIguales: newHash === user.password,
+      compareResult: match
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
 });
 
 module.exports = router;
