@@ -1,1 +1,6 @@
-{}
+{
+  "name": "cafeteria-pos",
+  "scripts": {
+    "build": "cd frontend && npm install && npm run build"
+  }
+}
