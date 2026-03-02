@@ -65,8 +65,7 @@ export default function Login() {
         </form>
 
         <div style={{ marginTop: 24, padding: '14px', background: 'var(--foam)', borderRadius: 'var(--radius-sm)', fontSize: 12, color: 'var(--text-muted)' }}>
-          <strong>Demo:</strong> admin@cafeteria.com / admin123<br/>
-          Cajero: cajero@cafeteria.com / admin123
+
         </div>
       </div>
     </div>
