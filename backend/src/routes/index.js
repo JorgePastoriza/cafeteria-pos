@@ -95,4 +95,40 @@ router.get('/debug-login', async (req, res) => {
   }
 });
 
+// DIAGNÓSTICO LOGIN POST TEMPORAL
+router.post('/debug-login-post', async (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const { User, Role } = require('../models');
+  
+  try {
+    const { email, password } = req.body;
+    
+    // Buscar usuario exactamente igual que el authController
+    const user = await User.findOne({
+      where: { email, active: true },
+      include: [{ model: Role, as: 'role' }]
+    });
+    
+    if (!user) return res.json({ paso1: 'FALLO - usuario no encontrado o inactivo' });
+    
+    // Probar validatePassword del modelo
+    const resultModelo = await user.validatePassword(password);
+    
+    // Probar bcrypt directo
+    const resultDirecto = await bcrypt.compare(password, user.password);
+    
+    res.json({
+      paso1: 'OK - usuario encontrado',
+      email: user.email,
+      activo: user.active,
+      hashEnBD: user.password,
+      passwordRecibido: password,
+      validatePasswordModelo: resultModelo,
+      bcryptDirecto: resultDirecto
+    });
+  } catch (err) {
+    res.json({ error: err.message });
+  }
+});
+
 module.exports = router;
