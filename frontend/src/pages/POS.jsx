@@ -16,11 +16,16 @@ function ProductCard({ product, onAdd }) {
       onClick={() => !outOfStock && onAdd(product)}
     >
       {outOfStock && <span className="stock-badge">Sin Stock</span>}
-      {!outOfStock && isLowStock && <span className="stock-badge" style={{ background: 'var(--warning)', color: 'var(--espresso)' }}>Stock bajo</span>}
+      {!outOfStock && isLowStock && (
+        <span className="stock-badge" style={{ background: 'var(--warning)', color: 'var(--espresso)' }}>
+          Stock bajo
+        </span>
+      )}
       <img
         src={product.image_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400'}
         alt={product.name}
         onError={e => { e.target.src = 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=400'; }}
+        loading="lazy"
       />
       <div className="product-card-body">
         <div className="product-card-name">{product.name}</div>
@@ -29,12 +34,18 @@ function ProductCard({ product, onAdd }) {
           Stock: {product.stock}
         </div>
       </div>
-      {!outOfStock && <button className="product-add-btn" onClick={(e) => { e.stopPropagation(); onAdd(product); }}>+</button>}
+      {!outOfStock && (
+        <button
+          className="product-add-btn"
+          onClick={(e) => { e.stopPropagation(); onAdd(product); }}
+          aria-label={`Agregar ${product.name}`}
+        >+</button>
+      )}
     </div>
   );
 }
 
-function Cart({ onSaleComplete }) {
+function CartContent({ onSaleComplete, onClose }) {
   const { items, paymentMethod, setPaymentMethod, removeItem, updateQuantity, clearCart, total, itemCount } = useCart();
   const [loading, setLoading] = useState(false);
 
@@ -50,6 +61,7 @@ function Cart({ onSaleComplete }) {
       toast.success(`✅ Venta ${res.data.sale_number} registrada!`);
       clearCart();
       onSaleComplete?.();
+      onClose?.();
     } catch (err) {
       toast.error(err.response?.data?.error || 'Error al procesar la venta');
     } finally {
@@ -58,10 +70,18 @@ function Cart({ onSaleComplete }) {
   };
 
   return (
-    <div className="pos-cart">
+    <>
+      {/* Handle para arrastrar en mobile */}
+      <div className="cart-drawer-handle" />
+
       <div className="cart-header">
-        <div className="cart-title">🛒 Carrito</div>
-        <div className="cart-count">{itemCount} {itemCount === 1 ? 'ítem' : 'ítems'}</div>
+        <div className="cart-header-left">
+          <div className="cart-title">🛒 Carrito</div>
+          <div className="cart-count">{itemCount} {itemCount === 1 ? 'ítem' : 'ítems'}</div>
+        </div>
+        {onClose && (
+          <button className="cart-close-btn" onClick={onClose} aria-label="Cerrar carrito">✕</button>
+        )}
       </div>
 
       <div className="cart-items">
@@ -72,7 +92,7 @@ function Cart({ onSaleComplete }) {
           </div>
         ) : items.map(item => (
           <div key={item.product_id} className="cart-item">
-            <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="cart-item-info">
               <div className="cart-item-name">{item.name}</div>
               <div className="cart-item-price">{formatPrice(item.price)} c/u</div>
             </div>
@@ -84,7 +104,8 @@ function Cart({ onSaleComplete }) {
             <div className="cart-item-subtotal">{formatPrice(item.subtotal)}</div>
             <button
               onClick={() => removeItem(item.product_id)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16 }}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16, padding: '4px', flexShrink: 0 }}
+              aria-label="Eliminar ítem"
             >✕</button>
           </div>
         ))}
@@ -129,7 +150,7 @@ function Cart({ onSaleComplete }) {
           </button>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -140,7 +161,10 @@ export default function POS() {
   const [filterType, setFilterType] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [search, setSearch] = useState('');
-  const { addItem } = useCart();
+  const [cartOpen, setCartOpen] = useState(false);
+  const { addItem, itemCount, total } = useCart();
+
+  const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -166,67 +190,107 @@ export default function POS() {
     return () => clearTimeout(t);
   }, [fetchProducts]);
 
+  // Cerrar drawer con Escape
+  useEffect(() => {
+    const handleKey = (e) => { if (e.key === 'Escape') setCartOpen(false); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Bloquear scroll cuando el drawer está abierto
+  useEffect(() => {
+    document.body.style.overflow = cartOpen ? 'hidden' : '';
+    return () => { document.body.style.overflow = ''; };
+  }, [cartOpen]);
+
   const filteredCategories = filterType
     ? categories.filter(c => c.type === filterType)
     : categories;
 
   return (
-    <div className="pos-layout" style={{ height: '100vh' }}>
-      {/* Productos */}
-      <div className="pos-products">
-        {/* Filtros */}
-        <div className="filters-bar">
-          <button
-            className={`filter-chip ${!filterType ? 'active' : ''}`}
-            onClick={() => { setFilterType(''); setFilterCategory(''); }}
-          >Todo</button>
-          <button
-            className={`filter-chip ${filterType === 'cafe' ? 'active' : ''}`}
-            onClick={() => { setFilterType('cafe'); setFilterCategory(''); }}
-          >☕ Café</button>
-          <button
-            className={`filter-chip ${filterType === 'comida' ? 'active' : ''}`}
-            onClick={() => { setFilterType('comida'); setFilterCategory(''); }}
-          >🥐 Comida</button>
-
-          {filteredCategories.map(cat => (
+    <>
+      <div className="pos-layout">
+        {/* ── PRODUCTOS ── */}
+        <div className="pos-products">
+          {/* Filtros */}
+          <div className="filters-bar">
             <button
-              key={cat.id}
-              className={`filter-chip ${filterCategory === String(cat.id) ? 'active' : ''}`}
-              onClick={() => setFilterCategory(filterCategory === String(cat.id) ? '' : String(cat.id))}
-            >
-              {cat.icon} {cat.name}
-            </button>
-          ))}
+              className={`filter-chip ${!filterType ? 'active' : ''}`}
+              onClick={() => { setFilterType(''); setFilterCategory(''); }}
+            >Todo</button>
+            <button
+              className={`filter-chip ${filterType === 'cafe' ? 'active' : ''}`}
+              onClick={() => { setFilterType('cafe'); setFilterCategory(''); }}
+            >☕ Café</button>
+            <button
+              className={`filter-chip ${filterType === 'comida' ? 'active' : ''}`}
+              onClick={() => { setFilterType('comida'); setFilterCategory(''); }}
+            >🥐 Comida</button>
 
-          <input
-            type="text"
-            placeholder="Buscar..."
-            className="form-control"
-            style={{ width: 160, marginLeft: 'auto' }}
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+            {filteredCategories.map(cat => (
+              <button
+                key={cat.id}
+                className={`filter-chip ${filterCategory === String(cat.id) ? 'active' : ''}`}
+                onClick={() => setFilterCategory(filterCategory === String(cat.id) ? '' : String(cat.id))}
+              >
+                {cat.icon} {cat.name}
+              </button>
+            ))}
+
+            <input
+              type="text"
+              placeholder="Buscar..."
+              className="form-control"
+              style={{ width: 140, marginLeft: 'auto', flexShrink: 0 }}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+          </div>
+
+          {loading ? (
+            <div className="loading-center"><div className="spinner" /></div>
+          ) : products.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-icon">☕</div>
+              <p>No se encontraron productos</p>
+            </div>
+          ) : (
+            <div className="product-grid">
+              {products.map(product => (
+                <ProductCard key={product.id} product={product} onAdd={addItem} />
+              ))}
+            </div>
+          )}
         </div>
 
-        {loading ? (
-          <div className="loading-center"><div className="spinner" /></div>
-        ) : products.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-icon">☕</div>
-            <p>No se encontraron productos</p>
-          </div>
-        ) : (
-          <div className="product-grid">
-            {products.map(product => (
-              <ProductCard key={product.id} product={product} onAdd={addItem} />
-            ))}
-          </div>
-        )}
+        {/* ── CARRITO DESKTOP ── */}
+        <div className="pos-cart">
+          <CartContent onSaleComplete={fetchProducts} />
+        </div>
       </div>
 
-      {/* Carrito */}
-      <Cart onSaleComplete={fetchProducts} />
-    </div>
+      {/* ── FAB CARRITO MOBILE ── */}
+      {itemCount > 0 && (
+        <button className="cart-fab" onClick={() => setCartOpen(true)}>
+          🛒
+          <span className="cart-fab-badge">{itemCount}</span>
+          {formatPrice(total)}
+        </button>
+      )}
+
+      {/* ── DRAWER OVERLAY ── */}
+      <div
+        className={`cart-drawer-overlay ${cartOpen ? 'open' : ''}`}
+        onClick={() => setCartOpen(false)}
+      />
+
+      {/* ── CARRITO MOBILE (DRAWER) ── */}
+      <div className={`pos-cart drawer ${cartOpen ? 'open' : ''}`}>
+        <CartContent
+          onSaleComplete={fetchProducts}
+          onClose={() => setCartOpen(false)}
+        />
+      </div>
+    </>
   );
 }

@@ -1,5 +1,6 @@
 // src/components/Layout.jsx
-import { NavLink, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -22,8 +23,32 @@ const NAV_ITEMS_CAJERO = [
 export default function Layout({ children }) {
   const { user, logout, isAdmin } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navItems = isAdmin() ? NAV_ITEMS_ADMIN : NAV_ITEMS_CAJERO;
+
+  // Cerrar sidebar al cambiar de ruta
+  useEffect(() => {
+    setSidebarOpen(false);
+  }, [location.pathname]);
+
+  // Cerrar sidebar con Escape
+  useEffect(() => {
+    const handleKey = (e) => { if (e.key === 'Escape') setSidebarOpen(false); };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  }, []);
+
+  // Bloquear scroll del body cuando el sidebar está abierto en mobile
+  useEffect(() => {
+    if (sidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [sidebarOpen]);
 
   const handleLogout = () => {
     logout();
@@ -31,12 +56,50 @@ export default function Layout({ children }) {
     navigate('/login');
   };
 
+  // Obtener título de la página actual
+  const currentPage = [...NAV_ITEMS_ADMIN, ...NAV_ITEMS_CAJERO]
+    .find(item => location.pathname === item.path);
+
   return (
     <div className="layout">
-      <aside className="sidebar">
+
+      {/* ── TOPBAR (solo mobile) ── */}
+      <header className="topbar">
+        <button
+          className="topbar-menu-btn"
+          onClick={() => setSidebarOpen(true)}
+          aria-label="Abrir menú"
+        >
+          ☰
+        </button>
+        <span className="topbar-title">
+          {currentPage ? `${currentPage.icon} ${currentPage.label}` : '☕ CaféPOS'}
+        </span>
+        <div className="topbar-user" title={user?.name}>
+          {user?.name?.[0]?.toUpperCase()}
+        </div>
+      </header>
+
+      {/* ── OVERLAY ── */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
+      {/* ── SIDEBAR ── */}
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-brand">
-          <h1>☕ CaféPOS</h1>
-          <p>Sistema de ventas</p>
+          <div className="sidebar-brand-text">
+            <h1>☕ CaféPOS</h1>
+            <p>Sistema de ventas</p>
+          </div>
+          <button
+            className="sidebar-close-btn"
+            onClick={() => setSidebarOpen(false)}
+            aria-label="Cerrar menú"
+          >
+            ✕
+          </button>
         </div>
 
         <nav className="sidebar-nav">
@@ -66,6 +129,7 @@ export default function Layout({ children }) {
         </div>
       </aside>
 
+      {/* ── CONTENIDO PRINCIPAL ── */}
       <main className="main-content">
         {children}
       </main>
