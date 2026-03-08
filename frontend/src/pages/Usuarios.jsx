@@ -7,7 +7,7 @@ import toast from 'react-hot-toast';
 
 const EMPTY_FORM = { name: '', email: '', password: '', role_id: '' };
 
-function UserModal({ user, roles, onClose, onSave }) {
+function UserModal({ user, roles, onClose, onSave, slugAPI }) {
   const [form, setForm] = useState(user
     ? { name: user.name, email: user.email, password: '', role_id: user.role_id || user.role?.id || '' }
     : EMPTY_FORM
@@ -152,7 +152,7 @@ export default function Usuarios() {
         </div>
       </div>
 
-      {modal && <UserModal user={modal === 'new' ? null : modal} roles={roles} onClose={() => setModal(null)} onSave={fetch} />}
+      {modal && <UserModal user={modal === 'new' ? null : modal} roles={roles} onClose={() => setModal(null)} onSave={fetch} slugAPI={slugAPI} />}
     </>
   );
 }

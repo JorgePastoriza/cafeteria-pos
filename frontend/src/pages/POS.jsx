@@ -46,7 +46,7 @@ function ProductCard({ product, onAdd }) {
   );
 }
 
-function CartContent({ onSaleComplete, onClose }) {
+function CartContent({ onSaleComplete, onClose, slugAPI }) {
   const { items, paymentMethod, setPaymentMethod, removeItem, updateQuantity, clearCart, total, itemCount } = useCart();
   const [loading, setLoading] = useState(false);
 
@@ -268,7 +268,7 @@ export default function POS() {
 
         {/* ── CARRITO DESKTOP ── */}
         <div className="pos-cart">
-          <CartContent onSaleComplete={fetchProducts} />
+          <CartContent onSaleComplete={fetchProducts} slugAPI={slugAPI} />
         </div>
       </div>
 
@@ -292,6 +292,7 @@ export default function POS() {
         <CartContent
           onSaleComplete={fetchProducts}
           onClose={() => setCartOpen(false)}
+          slugAPI={slugAPI}
         />
       </div>
     </>

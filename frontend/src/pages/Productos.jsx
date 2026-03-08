@@ -8,7 +8,7 @@ const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFr
 
 const EMPTY_FORM = { name: '', description: '', price: '', stock: '', stock_min: 5, category_id: '', type: 'cafe', image_url: '', active: true };
 
-function ProductModal({ product, categories, onClose, onSave }) {
+function ProductModal({ product, categories, onClose, onSave, slugAPI }) {
   const [form, setForm] = useState(product ? { ...product, price: product.price, stock: product.stock, stock_min: product.stock_min } : EMPTY_FORM);
   const [loading, setLoading] = useState(false);
 
@@ -215,6 +215,7 @@ export default function Productos() {
           categories={categories}
           onClose={() => setModal(null)}
           onSave={fetch}
+          slugAPI={slugAPI}
         />
       )}
     </>

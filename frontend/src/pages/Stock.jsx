@@ -4,7 +4,7 @@ import { makeSlugAPI } from '../services/api';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-function AdjustModal({ product, onClose, onSave }) {
+function AdjustModal({ product, onClose, onSave, slugAPI }) {
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
   const [loading, setLoading] = useState(false);
@@ -191,7 +191,7 @@ export default function Stock() {
         </div>
       </div>
 
-      {adjusting && <AdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={fetch} />}
+      {adjusting && <AdjustModal product={adjusting} onClose={() => setAdjusting(null)} onSave={fetch} slugAPI={slugAPI} />}
     </>
   );
 }
