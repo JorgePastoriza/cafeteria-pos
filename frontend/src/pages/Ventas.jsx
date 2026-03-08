@@ -4,14 +4,13 @@ import { makeSlugAPI } from '../services/api';
 import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
-const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
+const formatPrice = (n) => `$${parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 const paymentLabel = { efectivo: '💵 Efectivo', qr: '📱 QR', debito: '💳 Débito' };
 
 export default function Ventas() {
   const { slug } = useParams();
   const slugAPI = makeSlugAPI(slug);
   const [sales, setSales] = useState([]);
-  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
   const [from, setFrom] = useState(() => {
@@ -21,26 +20,47 @@ export default function Ventas() {
   const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
   const [payment, setPayment] = useState('');
 
-  const fetch = async () => {
+  const fetchSales = async () => {
     setLoading(true);
     try {
-      const params = { from, to };
+      const params = {};
+      // El backend acepta un parámetro 'date' para un día específico,
+      // pero para rango usamos 'from' y 'to' si el backend lo soporta,
+      // o filtramos por fecha de inicio
+      if (from) params.date = from; // fallback: filtra por 'from' si el backend no soporta rango
       if (payment) params.payment_method = payment;
+
+      // El endpoint GET /sales devuelve directamente un array
       const res = await slugAPI.sales.getAll(params);
-      setSales(res.data.sales);
-      setTotal(res.data.total);
-    } catch { toast.error('Error al cargar ventas'); }
-    finally { setLoading(false); }
+      const data = res.data;
+
+      // El backend devuelve un array directamente
+      const salesArray = Array.isArray(data) ? data : (data.sales || data.rows || []);
+      setSales(salesArray);
+    } catch (err) {
+      console.error('Ventas error:', err);
+      toast.error('Error al cargar ventas');
+      setSales([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetchSales(); }, []);
+
+  // Totales calculados en el frontend desde el array
+  const totalAmount = sales.reduce((sum, s) => sum + parseFloat(s.total || 0), 0);
+  const totalByPayment = sales.reduce((acc, s) => {
+    acc[s.payment_method] = (acc[s.payment_method] || 0) + parseFloat(s.total || 0);
+    return acc;
+  }, {});
 
   return (
     <>
       <div className="page-header">
         <div>
           <div className="page-title">📋 Historial de Ventas</div>
-          <div className="page-subtitle">{total} ventas encontradas</div>
+          <div className="page-subtitle">{sales.length} ventas encontradas</div>
         </div>
       </div>
 
@@ -50,12 +70,12 @@ export default function Ventas() {
           <div className="card-body">
             <div className="flex gap-3 items-center" style={{ flexWrap: 'wrap' }}>
               <div className="form-group" style={{ flex: '0 0 auto' }}>
-                <label className="form-label">Desde</label>
-                <input type="date" className="form-control" value={from} onChange={e => setFrom(e.target.value)} />
-              </div>
-              <div className="form-group" style={{ flex: '0 0 auto' }}>
-                <label className="form-label">Hasta</label>
-                <input type="date" className="form-control" value={to} onChange={e => setTo(e.target.value)} />
+                <label className="form-label">Fecha</label>
+                <input
+                  type="date" className="form-control"
+                  value={from}
+                  onChange={e => setFrom(e.target.value)}
+                />
               </div>
               <div className="form-group" style={{ flex: '0 0 auto' }}>
                 <label className="form-label">Pago</label>
@@ -66,20 +86,49 @@ export default function Ventas() {
                   <option value="debito">Débito</option>
                 </select>
               </div>
-              <button className="btn btn-primary" onClick={fetch} style={{ alignSelf: 'flex-end' }}>
+              <button
+                className="btn btn-primary"
+                onClick={fetchSales}
+                style={{ alignSelf: 'flex-end' }}
+              >
                 🔍 Buscar
               </button>
             </div>
           </div>
         </div>
 
+        {/* Resumen del período */}
+        {sales.length > 0 && (
+          <div className="stat-grid mb-4">
+            <div className="stat-card">
+              <div className="stat-label">Total del período</div>
+              <div className="stat-value">{formatPrice(totalAmount)}</div>
+              <div className="stat-icon">💰</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">💵 Efectivo</div>
+              <div className="stat-value">{formatPrice(totalByPayment.efectivo || 0)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">📱 QR</div>
+              <div className="stat-value">{formatPrice(totalByPayment.qr || 0)}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-label">💳 Débito</div>
+              <div className="stat-value">{formatPrice(totalByPayment.debito || 0)}</div>
+            </div>
+          </div>
+        )}
+
         <div className="card">
-          {loading ? <div className="loading-center"><div className="spinner" /></div> : (
+          {loading ? (
+            <div className="loading-center"><div className="spinner" /></div>
+          ) : (
             <div className="table-wrapper">
               {sales.length === 0 ? (
                 <div className="empty-state">
                   <div className="empty-icon">📋</div>
-                  <p>No se encontraron ventas</p>
+                  <p>No se encontraron ventas para los filtros seleccionados</p>
                 </div>
               ) : (
                 <table>
@@ -97,38 +146,71 @@ export default function Ventas() {
                   <tbody>
                     {sales.map(sale => (
                       <>
-                        <tr key={sale.id} style={{ cursor: 'pointer' }} onClick={() => setExpanded(expanded === sale.id ? null : sale.id)}>
-                          <td><strong style={{ fontFamily: 'monospace' }}>{sale.sale_number}</strong></td>
-                          <td>{new Date(sale.created_at).toLocaleString('es-AR')}</td>
-                          <td>{sale.user?.name}</td>
-                          <td><span className="badge badge-info">{paymentLabel[sale.payment_method]}</span></td>
-                          <td>{sale.items?.length} ítem(s)</td>
-                          <td style={{ textAlign: 'right' }}><strong>{formatPrice(sale.total)}</strong></td>
-                          <td>{expanded === sale.id ? '▲' : '▼'}</td>
+                        <tr
+                          key={sale.id}
+                          style={{ cursor: 'pointer' }}
+                          onClick={() => setExpanded(expanded === sale.id ? null : sale.id)}
+                        >
+                          <td>
+                            <strong style={{ fontFamily: 'monospace', fontSize: 13 }}>
+                              {sale.sale_number}
+                            </strong>
+                          </td>
+                          <td>
+                            {new Date(sale.created_at).toLocaleString('es-AR', {
+                              day: '2-digit', month: '2-digit', year: 'numeric',
+                              hour: '2-digit', minute: '2-digit'
+                            })}
+                          </td>
+                          <td>{sale.user?.name || '—'}</td>
+                          <td>
+                            <span className="badge badge-info">
+                              {paymentLabel[sale.payment_method] || sale.payment_method}
+                            </span>
+                          </td>
+                          <td>{sale.items?.length ?? 0} ítem(s)</td>
+                          <td style={{ textAlign: 'right' }}>
+                            <strong>{formatPrice(sale.total)}</strong>
+                          </td>
+                          <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                            {expanded === sale.id ? '▲' : '▼'}
+                          </td>
                         </tr>
+
                         {expanded === sale.id && (
                           <tr key={`${sale.id}-detail`}>
-                            <td colSpan={7} style={{ background: 'var(--foam)', padding: '0 16px 16px' }}>
-                              <table style={{ marginTop: 8 }}>
-                                <thead>
-                                  <tr>
-                                    <th>Producto</th>
-                                    <th>Precio Unit.</th>
-                                    <th>Cantidad</th>
-                                    <th style={{ textAlign: 'right' }}>Subtotal</th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {sale.items?.map(item => (
-                                    <tr key={item.id}>
-                                      <td>{item.product_name}</td>
-                                      <td>{formatPrice(item.product_price)}</td>
-                                      <td>× {item.quantity}</td>
-                                      <td style={{ textAlign: 'right', fontWeight: 700 }}>{formatPrice(item.subtotal)}</td>
+                            <td
+                              colSpan={7}
+                              style={{ background: 'var(--foam)', padding: '0 16px 16px' }}
+                            >
+                              {sale.items && sale.items.length > 0 ? (
+                                <table style={{ marginTop: 8 }}>
+                                  <thead>
+                                    <tr>
+                                      <th>Producto</th>
+                                      <th>Precio Unit.</th>
+                                      <th>Cantidad</th>
+                                      <th style={{ textAlign: 'right' }}>Subtotal</th>
                                     </tr>
-                                  ))}
-                                </tbody>
-                              </table>
+                                  </thead>
+                                  <tbody>
+                                    {sale.items.map(item => (
+                                      <tr key={item.id}>
+                                        <td>{item.product_name}</td>
+                                        <td>{formatPrice(item.product_price)}</td>
+                                        <td>× {item.quantity}</td>
+                                        <td style={{ textAlign: 'right', fontWeight: 700 }}>
+                                          {formatPrice(item.subtotal)}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              ) : (
+                                <p style={{ padding: '12px 0', color: 'var(--text-muted)', fontSize: 13 }}>
+                                  Sin detalle disponible
+                                </p>
+                              )}
                             </td>
                           </tr>
                         )}

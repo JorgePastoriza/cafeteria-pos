@@ -25,64 +25,100 @@ const CHART_COLORS = {
 export default function Dashboard() {
   const { slug } = useParams();
   const slugAPI = makeSlugAPI(slug);
-  const [data, setData] = useState(null);
+  const [stats, setStats] = useState(null);
+  const [chartData, setChartData] = useState([]);
+  const [topProducts, setTopProducts] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [from, setFrom] = useState(() => {
-    const d = new Date(); d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
-  });
-  const [to, setTo] = useState(new Date().toISOString().slice(0, 10));
+  const [days, setDays] = useState(30);
 
   const fetchData = async () => {
     setLoading(true);
     try {
       const [statsRes, chartRes, topRes] = await Promise.all([
         slugAPI.dashboard.getStats(),
-        slugAPI.dashboard.getChart({ days: 30 }),
+        slugAPI.dashboard.getChart({ days }),
         slugAPI.dashboard.getTopProducts()
       ]);
-      const res = { data: { stats: statsRes.data, chart: chartRes.data, top: topRes.data } };
-      setData(res.data);
-    } catch {
+      setStats(statsRes.data);
+      setChartData(Array.isArray(chartRes.data) ? chartRes.data : []);
+      setTopProducts(Array.isArray(topRes.data) ? topRes.data : []);
+    } catch (err) {
+      console.error('Dashboard error:', err);
       toast.error('Error al cargar dashboard');
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  useEffect(() => { fetchData(); }, [days]);
 
-  const salesByDayChart = data ? {
-    labels: data.salesByDay.map(d => new Date(d.date).toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' })),
+  // Ventas por día (desde el chart endpoint que devuelve array con date/revenue/count/efectivo/qr/debito)
+  const salesByDayChart = chartData.length > 0 ? {
+    labels: chartData.map(d => {
+      const date = new Date(d.date + 'T00:00:00');
+      return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+    }),
     datasets: [{
       label: 'Ventas ($)',
-      data: data.salesByDay.map(d => parseFloat(d.total)),
-      backgroundColor: CHART_COLORS.accent + '80',
+      data: chartData.map(d => parseFloat(d.revenue || 0)),
+      backgroundColor: CHART_COLORS.accent + '40',
       borderColor: CHART_COLORS.accent,
       borderWidth: 2,
       tension: 0.4,
-      fill: true
+      fill: true,
+      pointBackgroundColor: CHART_COLORS.accent,
+      pointRadius: 4
     }]
   } : null;
 
-  const salesByHourChart = data ? {
-    labels: data.salesByHour.map(d => `${d.hour}:00`),
+  // Cantidad de ventas por día
+  const countByDayChart = chartData.length > 0 ? {
+    labels: chartData.map(d => {
+      const date = new Date(d.date + 'T00:00:00');
+      return date.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+    }),
     datasets: [{
-      label: 'Ventas por hora',
-      data: data.salesByHour.map(d => parseInt(d.count)),
+      label: 'Cantidad de ventas',
+      data: chartData.map(d => parseInt(d.count || 0)),
       backgroundColor: CHART_COLORS.espresso,
       borderRadius: 6
     }]
   } : null;
 
-  const paymentChart = data ? {
-    labels: data.salesByPayment.map(d => ({ efectivo: 'Efectivo', qr: 'QR', debito: 'Débito' }[d.payment_method])),
+  // Distribución por método de pago (suma del período)
+  const paymentTotals = chartData.reduce((acc, d) => {
+    acc.efectivo += parseFloat(d.efectivo || 0);
+    acc.qr += parseFloat(d.qr || 0);
+    acc.debito += parseFloat(d.debito || 0);
+    return acc;
+  }, { efectivo: 0, qr: 0, debito: 0 });
+
+  const hasPaymentData = paymentTotals.efectivo + paymentTotals.qr + paymentTotals.debito > 0;
+
+  const paymentChart = hasPaymentData ? {
+    labels: ['Efectivo', 'QR', 'Débito'],
     datasets: [{
-      data: data.salesByPayment.map(d => parseFloat(d.total)),
+      data: [paymentTotals.efectivo, paymentTotals.qr, paymentTotals.debito],
       backgroundColor: [CHART_COLORS.success, CHART_COLORS.info, CHART_COLORS.latte],
       borderWidth: 0
     }]
   } : null;
+
+  // Totales del período desde chartData
+  const periodTotals = chartData.reduce((acc, d) => {
+    acc.revenue += parseFloat(d.revenue || 0);
+    acc.count += parseInt(d.count || 0);
+    return acc;
+  }, { revenue: 0, count: 0 });
+
+  const chartOptions = {
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false } }
+    }
+  };
 
   return (
     <>
@@ -92,10 +128,18 @@ export default function Dashboard() {
           <div className="page-subtitle">Análisis y estadísticas</div>
         </div>
         <div className="flex gap-2 items-center">
-          <input type="date" className="form-control" value={from} onChange={e => setFrom(e.target.value)} style={{ width: 160 }} />
-          <span className="text-muted">→</span>
-          <input type="date" className="form-control" value={to} onChange={e => setTo(e.target.value)} style={{ width: 160 }} />
-          <button className="btn btn-primary" onClick={fetchData}>Aplicar</button>
+          <select
+            className="form-control"
+            style={{ width: 160 }}
+            value={days}
+            onChange={e => setDays(parseInt(e.target.value))}
+          >
+            <option value={7}>Últimos 7 días</option>
+            <option value={14}>Últimos 14 días</option>
+            <option value={30}>Últimos 30 días</option>
+            <option value={60}>Últimos 60 días</option>
+          </select>
+          <button className="btn btn-primary" onClick={fetchData}>Actualizar</button>
         </div>
       </div>
 
@@ -104,45 +148,78 @@ export default function Dashboard() {
           <div className="loading-center"><div className="spinner" /></div>
         ) : (
           <>
-            {/* KPIs */}
+            {/* KPIs de hoy / mes desde stats */}
+            {stats && (
+              <div className="stat-grid mb-4">
+                <div className="stat-card">
+                  <div className="stat-label">Ventas hoy</div>
+                  <div className="stat-value">{formatPrice(stats.today?.revenue || 0)}</div>
+                  <div className="stat-icon">☀️</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-label">Transacciones hoy</div>
+                  <div className="stat-value">{stats.today?.sales || 0}</div>
+                  <div className="stat-icon">🧾</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-label">Ventas del mes</div>
+                  <div className="stat-value">{formatPrice(stats.month?.revenue || 0)}</div>
+                  <div className="stat-icon">📅</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-label">Productos activos</div>
+                  <div className="stat-value">{stats.products?.total || 0}</div>
+                  <div className="stat-icon">☕</div>
+                </div>
+                {stats.products?.lowStock > 0 && (
+                  <div className="stat-card" style={{ borderColor: 'var(--warning)' }}>
+                    <div className="stat-label">Stock bajo</div>
+                    <div className="stat-value" style={{ color: 'var(--danger)' }}>{stats.products.lowStock}</div>
+                    <div className="stat-icon">⚠️</div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* KPIs del período seleccionado */}
             <div className="stat-grid mb-4">
               <div className="stat-card">
                 <div className="stat-label">Total del período</div>
-                <div className="stat-value">{formatPrice(data?.totals?.total)}</div>
+                <div className="stat-value">{formatPrice(periodTotals.revenue)}</div>
                 <div className="stat-icon">💰</div>
               </div>
               <div className="stat-card">
-                <div className="stat-label">Ventas realizadas</div>
-                <div className="stat-value">{parseInt(data?.totals?.count || 0)}</div>
+                <div className="stat-label">Transacciones</div>
+                <div className="stat-value">{periodTotals.count}</div>
                 <div className="stat-icon">🧾</div>
               </div>
               <div className="stat-card">
                 <div className="stat-label">Ticket promedio</div>
                 <div className="stat-value">
-                  {data?.totals?.count > 0
-                    ? formatPrice(parseFloat(data.totals.total) / parseInt(data.totals.count))
+                  {periodTotals.count > 0
+                    ? formatPrice(periodTotals.revenue / periodTotals.count)
                     : '$0'}
                 </div>
                 <div className="stat-icon">📊</div>
               </div>
             </div>
 
-            {/* Charts */}
+            {/* Gráficos */}
             <div className="grid-2 mb-4">
               <div className="card">
-                <div className="card-header"><span className="card-title">📅 Ventas por día</span></div>
+                <div className="card-header"><span className="card-title">📅 Ingresos por día</span></div>
                 <div className="card-body">
-                  {salesByDayChart && salesByDayChart.labels.length > 0
-                    ? <Line data={salesByDayChart} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+                  {salesByDayChart
+                    ? <Line data={salesByDayChart} options={chartOptions} />
                     : <div className="empty-state"><p>Sin datos para el período</p></div>}
                 </div>
               </div>
 
               <div className="card">
-                <div className="card-header"><span className="card-title">🕐 Ventas por franja horaria</span></div>
+                <div className="card-header"><span className="card-title">🔢 Cantidad de ventas por día</span></div>
                 <div className="card-body">
-                  {salesByHourChart && salesByHourChart.labels.length > 0
-                    ? <Bar data={salesByHourChart} options={{ responsive: true, plugins: { legend: { display: false } } }} />
+                  {countByDayChart
+                    ? <Bar data={countByDayChart} options={chartOptions} />
                     : <div className="empty-state"><p>Sin datos para el período</p></div>}
                 </div>
               </div>
@@ -150,35 +227,56 @@ export default function Dashboard() {
 
             <div className="grid-2">
               <div className="card">
-                <div className="card-header"><span className="card-title">💳 Ventas por método de pago</span></div>
+                <div className="card-header"><span className="card-title">💳 Distribución por método de pago</span></div>
                 <div className="card-body" style={{ display: 'flex', justifyContent: 'center' }}>
-                  {paymentChart && paymentChart.labels.length > 0
+                  {paymentChart
                     ? <div style={{ maxWidth: 300, width: '100%' }}>
                         <Doughnut data={paymentChart} options={{ plugins: { legend: { position: 'bottom' } } }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 12 }}>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>💵 Efectivo</div>
+                            <div style={{ fontWeight: 700 }}>{formatPrice(paymentTotals.efectivo)}</div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>📱 QR</div>
+                            <div style={{ fontWeight: 700 }}>{formatPrice(paymentTotals.qr)}</div>
+                          </div>
+                          <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>💳 Débito</div>
+                            <div style={{ fontWeight: 700 }}>{formatPrice(paymentTotals.debito)}</div>
+                          </div>
+                        </div>
                       </div>
                     : <div className="empty-state"><p>Sin datos para el período</p></div>}
                 </div>
               </div>
 
               <div className="card">
-                <div className="card-header"><span className="card-title">🏆 Top Productos</span></div>
+                <div className="card-header"><span className="card-title">🏆 Top Productos del Mes</span></div>
                 <div className="card-body">
-                  {data?.topProducts?.length > 0 ? (
+                  {topProducts.length > 0 ? (
                     <table>
                       <thead>
-                        <tr><th>Producto</th><th>Cant.</th><th style={{ textAlign: 'right' }}>Total</th></tr>
+                        <tr><th>#</th><th>Producto</th><th>Cant.</th><th style={{ textAlign: 'right' }}>Total</th></tr>
                       </thead>
                       <tbody>
-                        {data.topProducts.map((p, i) => (
+                        {topProducts.map((p, i) => (
                           <tr key={i}>
+                            <td>
+                              <span style={{ fontSize: 16 }}>
+                                {['🥇','🥈','🥉'][i] || `${i + 1}`}
+                              </span>
+                            </td>
                             <td><strong>{p.product_name}</strong></td>
                             <td>{p.total_qty}</td>
-                            <td style={{ textAlign: 'right' }}>{formatPrice(p.total_amount)}</td>
+                            <td style={{ textAlign: 'right' }}>{formatPrice(p.total_revenue)}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                  ) : <div className="empty-state"><p>Sin datos para el período</p></div>}
+                  ) : (
+                    <div className="empty-state"><p>Sin ventas este mes</p></div>
+                  )}
                 </div>
               </div>
             </div>
