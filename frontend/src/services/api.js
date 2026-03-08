@@ -1,74 +1,92 @@
 // src/services/api.js
 import axios from 'axios';
 
-const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
-  headers: { 'Content-Type': 'application/json' }
-});
+const BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
-// Interceptor: agregar token JWT
+const api = axios.create({ baseURL: BASE_URL });
+
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Interceptor: manejar errores de autenticación
 api.interceptors.response.use(
-  (res) => res,
+  (r) => r,
   (error) => {
     if (error.response?.status === 401) {
+      const slug = localStorage.getItem('slug');
       localStorage.removeItem('token');
       localStorage.removeItem('user');
-      window.location.href = '/login';
+      localStorage.removeItem('tenant');
+      if (slug) window.location.href = `/${slug}/login`;
     }
     return Promise.reject(error);
   }
 );
 
-// AUTH
+const u = (slug, path) => `/${slug}${path}`;
+
+export const tenantAPI = {
+  getInfo: (slug) => api.get(`/tenant-info/${slug}`)
+};
+
 export const authAPI = {
-  login: (data) => api.post('/auth/login', data),
-  me: () => api.get('/auth/me')
+  login: (slug, data) => api.post(u(slug, '/auth/login'), data),
+  me: (slug) => api.get(u(slug, '/auth/me'))
 };
 
-// PRODUCTS
-export const productsAPI = {
-  getAll: (params) => api.get('/products', { params }),
-  getOne: (id) => api.get(`/products/${id}`),
-  create: (data) => api.post('/products', data),
-  update: (id, data) => api.put(`/products/${id}`, data),
-  delete: (id) => api.delete(`/products/${id}`),
-  adjustStock: (id, data) => api.post(`/products/${id}/stock`, data),
-  getMovements: (id) => api.get(`/products/${id}/movements`)
+export const superAdminAPI = {
+  login: (data) => api.post('/superadmin/login', data),
+  me: () => api.get('/superadmin/me'),
+  getStats: () => api.get('/superadmin/stats'),
+  getTenants: () => api.get('/superadmin/tenants'),
+  createTenant: (data) => api.post('/superadmin/tenants', data),
+  updateTenant: (id, data) => api.put(`/superadmin/tenants/${id}`, data),
+  deleteTenant: (id) => api.delete(`/superadmin/tenants/${id}`),
+  getTenantUsers: (id) => api.get(`/superadmin/tenants/${id}/users`)
 };
 
-// CATEGORIES
-export const categoriesAPI = {
-  getAll: (params) => api.get('/categories', { params }),
-  create: (data) => api.post('/categories', data)
-};
-
-// SALES
-export const salesAPI = {
-  create: (data) => api.post('/sales', data),
-  getAll: (params) => api.get('/sales', { params }),
-  today: () => api.get('/sales/today'),
-  closeDay: (data) => api.post('/sales/close-day', data)
-};
-
-// DASHBOARD
-export const dashboardAPI = {
-  get: (params) => api.get('/dashboard', { params })
-};
-
-// USERS
-export const usersAPI = {
-  getAll: () => api.get('/users'),
-  create: (data) => api.post('/users', data),
-  update: (id, data) => api.put(`/users/${id}`, data),
-  delete: (id) => api.delete(`/users/${id}`),
-  getRoles: () => api.get('/roles')
-};
+export const makeSlugAPI = (slug) => ({
+  products: {
+    getAll: (params) => api.get(u(slug, '/products'), { params }),
+    getById: (id) => api.get(u(slug, `/products/${id}`)),
+    create: (data) => api.post(u(slug, '/products'), data),
+    update: (id, data) => api.put(u(slug, `/products/${id}`), data),
+    delete: (id) => api.delete(u(slug, `/products/${id}`))
+  },
+  categories: {
+    getAll: (params) => api.get(u(slug, '/categories'), { params }),
+    create: (data) => api.post(u(slug, '/categories'), data),
+    update: (id, data) => api.put(u(slug, `/categories/${id}`), data),
+    delete: (id) => api.delete(u(slug, `/categories/${id}`))
+  },
+  sales: {
+    create: (data) => api.post(u(slug, '/sales'), data),
+    getAll: (params) => api.get(u(slug, '/sales'), { params }),
+    getById: (id) => api.get(u(slug, `/sales/${id}`))
+  },
+  stock: {
+    adjust: (data) => api.post(u(slug, '/stock/adjust'), data),
+    getMovements: () => api.get(u(slug, '/stock/movements'))
+  },
+  cierre: {
+    getToday: () => api.get(u(slug, '/cierre/today')),
+    close: (data) => api.post(u(slug, '/cierre/close'), data),
+    getHistory: () => api.get(u(slug, '/cierre/history'))
+  },
+  dashboard: {
+    getStats: () => api.get(u(slug, '/dashboard/stats')),
+    getChart: (params) => api.get(u(slug, '/dashboard/chart'), { params }),
+    getTopProducts: () => api.get(u(slug, '/dashboard/top-products'))
+  },
+  users: {
+    getAll: () => api.get(u(slug, '/users')),
+    create: (data) => api.post(u(slug, '/users'), data),
+    update: (id, data) => api.put(u(slug, `/users/${id}`), data),
+    delete: (id) => api.delete(u(slug, `/users/${id}`))
+  },
+  roles: { getAll: () => api.get(u(slug, '/roles')) }
+});
 
 export default api;

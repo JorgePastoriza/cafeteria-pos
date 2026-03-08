@@ -1,6 +1,7 @@
 // src/pages/POS.jsx
 import { useState, useEffect, useCallback } from 'react';
-import { productsAPI, categoriesAPI, salesAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
+import { makeSlugAPI } from '../services/api';
 import { useCart } from '../context/CartContext';
 import toast from 'react-hot-toast';
 
@@ -54,7 +55,7 @@ function CartContent({ onSaleComplete, onClose }) {
     if (!paymentMethod) { toast.error('Seleccioná un método de pago'); return; }
     setLoading(true);
     try {
-      const res = await salesAPI.create({
+      const res = await slugAPI.sales.create({
         items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
         payment_method: paymentMethod
       });
@@ -155,6 +156,8 @@ function CartContent({ onSaleComplete, onClose }) {
 }
 
 export default function POS() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -172,7 +175,7 @@ export default function POS() {
       if (filterType) params.type = filterType;
       if (filterCategory) params.category_id = filterCategory;
       if (search) params.search = search;
-      const res = await productsAPI.getAll(params);
+      const res = await slugAPI.products.getAll(params);
       setProducts(res.data);
     } catch {
       toast.error('Error al cargar productos');
@@ -182,7 +185,7 @@ export default function POS() {
   }, [filterType, filterCategory, search]);
 
   useEffect(() => {
-    categoriesAPI.getAll().then(r => setCategories(r.data)).catch(() => {});
+    slugAPI.categories.getAll().then(r => setCategories(r.data)).catch(() => {});
   }, []);
 
   useEffect(() => {

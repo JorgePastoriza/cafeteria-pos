@@ -1,6 +1,7 @@
 // src/pages/Dashboard.jsx
 import { useState, useEffect } from 'react';
-import { dashboardAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, BarElement, LineElement,
   PointElement, Title, Tooltip, Legend, ArcElement
@@ -22,6 +23,8 @@ const CHART_COLORS = {
 };
 
 export default function Dashboard() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [from, setFrom] = useState(() => {
@@ -33,7 +36,12 @@ export default function Dashboard() {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const res = await dashboardAPI.get({ from, to });
+      const [statsRes, chartRes, topRes] = await Promise.all([
+        slugAPI.dashboard.getStats(),
+        slugAPI.dashboard.getChart({ days: 30 }),
+        slugAPI.dashboard.getTopProducts()
+      ]);
+      const res = { data: { stats: statsRes.data, chart: chartRes.data, top: topRes.data } };
       setData(res.data);
     } catch {
       toast.error('Error al cargar dashboard');

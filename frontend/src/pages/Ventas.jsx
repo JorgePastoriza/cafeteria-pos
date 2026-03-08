@@ -1,12 +1,15 @@
 // src/pages/Ventas.jsx
 import { useState, useEffect } from 'react';
-import { salesAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 const paymentLabel = { efectivo: '💵 Efectivo', qr: '📱 QR', debito: '💳 Débito' };
 
 export default function Ventas() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [sales, setSales] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -23,7 +26,7 @@ export default function Ventas() {
     try {
       const params = { from, to };
       if (payment) params.payment_method = payment;
-      const res = await salesAPI.getAll(params);
+      const res = await slugAPI.sales.getAll(params);
       setSales(res.data.sales);
       setTotal(res.data.total);
     } catch { toast.error('Error al cargar ventas'); }

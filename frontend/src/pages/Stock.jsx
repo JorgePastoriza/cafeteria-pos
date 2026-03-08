@@ -1,6 +1,7 @@
 // src/pages/Stock.jsx
 import { useState, useEffect } from 'react';
-import { productsAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 function AdjustModal({ product, onClose, onSave }) {
@@ -13,7 +14,7 @@ function AdjustModal({ product, onClose, onSave }) {
     if (!qty || qty === '0') { toast.error('Ingresá una cantidad'); return; }
     setLoading(true);
     try {
-      await productsAPI.adjustStock(product.id, { quantity: parseInt(qty), reason });
+      await slugAPI.stock.adjust({ product_id: product.id, quantity: parseInt(qty), reason });
       toast.success('Stock ajustado correctamente');
       onSave();
       onClose();
@@ -76,6 +77,8 @@ function AdjustModal({ product, onClose, onSave }) {
 }
 
 export default function Stock() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [adjusting, setAdjusting] = useState(null);
@@ -83,7 +86,7 @@ export default function Stock() {
 
   const fetch = async () => {
     try {
-      const res = await productsAPI.getAll({ active: true });
+      const res = await slugAPI.products.getAll({ active: true });
       setProducts(res.data);
     } catch { toast.error('Error al cargar stock'); }
     finally { setLoading(false); }

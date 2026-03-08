@@ -1,18 +1,21 @@
 // src/pages/Cierre.jsx
 import { useState, useEffect } from 'react';
-import { salesAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const formatPrice = (n) => `$${parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 
 export default function Cierre() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [closing, setClosing] = useState(false);
 
   const fetchSummary = async () => {
     try {
-      const res = await salesAPI.today();
+      const res = await slugAPI.cierre.getToday();
       setSummary(res.data);
     } catch {
       toast.error('Error al cargar resumen');
@@ -27,7 +30,7 @@ export default function Cierre() {
     if (!window.confirm('¿Estás seguro de cerrar el día? Esta acción no se puede revertir.')) return;
     setClosing(true);
     try {
-      await salesAPI.closeDay({});
+      await slugAPI.cierre.close({});
       toast.success('✅ Día cerrado exitosamente');
       fetchSummary();
     } catch (err) {

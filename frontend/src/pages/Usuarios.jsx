@@ -1,6 +1,7 @@
 // src/pages/Usuarios.jsx
 import { useState, useEffect } from 'react';
-import { usersAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -23,8 +24,8 @@ function UserModal({ user, roles, onClose, onSave }) {
     try {
       const data = { ...form };
       if (user && !form.password) delete data.password;
-      if (user) await usersAPI.update(user.id, data);
-      else await usersAPI.create(data);
+      if (user) await slugAPI.users.update(user.id, data);
+      else await slugAPI.users.create(data);
       toast.success(user ? 'Usuario actualizado' : 'Usuario creado');
       onSave();
       onClose();
@@ -75,6 +76,8 @@ function UserModal({ user, roles, onClose, onSave }) {
 }
 
 export default function Usuarios() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -83,7 +86,7 @@ export default function Usuarios() {
 
   const fetch = async () => {
     try {
-      const [u, r] = await Promise.all([usersAPI.getAll(), usersAPI.getRoles()]);
+      const [u, r] = await Promise.all([slugAPI.users.getAll(), slugAPI.roles.getAll()]);
       setUsers(u.data);
       setRoles(r.data);
     } catch { toast.error('Error al cargar usuarios'); }
@@ -95,7 +98,7 @@ export default function Usuarios() {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Desactivar este usuario?')) return;
     try {
-      await usersAPI.delete(id);
+      await slugAPI.users.delete(id);
       toast.success('Usuario desactivado');
       fetch();
     } catch (err) { toast.error(err.response?.data?.error || 'Error'); }

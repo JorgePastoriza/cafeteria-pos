@@ -1,48 +1,51 @@
 // src/middleware/auth.js
 const jwt = require('jsonwebtoken');
-const { User, Role } = require('../models');
+const { User, Role, SuperAdmin } = require('../models');
 
-/**
- * Middleware de autenticación JWT
- */
 const authenticate = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader?.startsWith('Bearer '))
       return res.status(401).json({ error: 'Token no proporcionado' });
-    }
 
-    const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+    if (decoded.type === 'superadmin')
+      return res.status(403).json({ error: 'Use el endpoint de super admin' });
 
     const user = await User.findByPk(decoded.id, {
       include: [{ model: Role, as: 'role' }]
     });
-
-    if (!user || !user.active) {
-      return res.status(401).json({ error: 'Usuario no autorizado' });
-    }
-
+    if (!user || !user.active) return res.status(401).json({ error: 'Usuario no autorizado' });
     req.user = user;
     next();
-  } catch (error) {
-    if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ error: 'Token expirado' });
-    }
-    return res.status(401).json({ error: 'Token inválido' });
+  } catch (e) {
+    return res.status(401).json({ error: e.name === 'TokenExpiredError' ? 'Token expirado' : 'Token inválido' });
   }
 };
 
-/**
- * Middleware de autorización por rol
- */
-const authorize = (...roles) => {
-  return (req, res, next) => {
-    if (!req.user || !roles.includes(req.user.role.name)) {
-      return res.status(403).json({ error: 'Acceso denegado. Permisos insuficientes.' });
-    }
-    next();
-  };
+const authorize = (...roles) => (req, res, next) => {
+  if (!req.user || !roles.includes(req.user.role.name))
+    return res.status(403).json({ error: 'Permisos insuficientes' });
+  next();
 };
 
-module.exports = { authenticate, authorize };
+const authenticateSuperAdmin = async (req, res, next) => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader?.startsWith('Bearer '))
+      return res.status(401).json({ error: 'Token no proporcionado' });
+
+    const decoded = jwt.verify(authHeader.split(' ')[1], process.env.JWT_SECRET);
+    if (decoded.type !== 'superadmin')
+      return res.status(403).json({ error: 'Solo para super administradores' });
+
+    const sa = await SuperAdmin.findByPk(decoded.id);
+    if (!sa || !sa.active) return res.status(401).json({ error: 'No autorizado' });
+    req.superAdmin = sa;
+    next();
+  } catch (e) {
+    return res.status(401).json({ error: e.name === 'TokenExpiredError' ? 'Token expirado' : 'Token inválido' });
+  }
+};
+
+module.exports = { authenticate, authorize, authenticateSuperAdmin };

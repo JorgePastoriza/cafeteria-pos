@@ -1,88 +1,86 @@
 // src/controllers/dashboardController.js
-const { Sale, SaleItem, Product, sequelize } = require('../models');
-const { Op } = require('sequelize');
+const { Sale, SaleItem, Product, User } = require('../models');
+const { Op, fn, col, literal } = require('sequelize');
 
-/** GET /api/dashboard - Datos del dashboard con filtros de fecha */
-const getDashboard = async (req, res) => {
+const getStats = async (req, res) => {
   try {
-    const { from, to } = req.query;
-    const startDate = from ? new Date(from) : new Date(new Date().setDate(new Date().getDate() - 30));
-    const endDate = to ? new Date(to) : new Date();
-    endDate.setHours(23, 59, 59, 999);
+    const tid = req.tenant.id;
+    const today = new Date().toISOString().split('T')[0];
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
 
-    const dateWhere = { created_at: { [Op.between]: [startDate, endDate] }, status: 'completed' };
+    const [todaySales, monthSales, totalProducts, lowStock] = await Promise.all([
+      Sale.findAll({ where: { tenant_id: tid, status: 'completed', created_at: { [Op.between]: [`${today} 00:00:00`, `${today} 23:59:59`] } } }),
+      Sale.findAll({ where: { tenant_id: tid, status: 'completed', created_at: { [Op.gte]: monthStart } } }),
+      Product.count({ where: { tenant_id: tid, active: true } }),
+      Product.count({ where: { tenant_id: tid, active: true, stock: { [Op.lte]: literal('stock_min') } } })
+    ]);
 
-    // Ventas por día
-    const salesByDay = await Sale.findAll({
-      where: dateWhere,
-      attributes: [
-        [sequelize.fn('DATE', sequelize.col('created_at')), 'date'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-        [sequelize.fn('SUM', sequelize.col('total')), 'total']
-      ],
-      group: [sequelize.fn('DATE', sequelize.col('created_at'))],
-      order: [[sequelize.fn('DATE', sequelize.col('created_at')), 'ASC']],
-      raw: true
+    const todayRevenue = todaySales.reduce((s, v) => s + parseFloat(v.total), 0);
+    const monthRevenue = monthSales.reduce((s, v) => s + parseFloat(v.total), 0);
+
+    res.json({
+      today: { sales: todaySales.length, revenue: todayRevenue },
+      month: { sales: monthSales.length, revenue: monthRevenue },
+      products: { total: totalProducts, lowStock }
     });
-
-    // Ventas por franja horaria
-    const salesByHour = await Sale.findAll({
-      where: dateWhere,
-      attributes: [
-        [sequelize.fn('HOUR', sequelize.col('created_at')), 'hour'],
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-        [sequelize.fn('SUM', sequelize.col('total')), 'total']
-      ],
-      group: [sequelize.fn('HOUR', sequelize.col('created_at'))],
-      order: [[sequelize.fn('HOUR', sequelize.col('created_at')), 'ASC']],
-      raw: true
-    });
-
-    // Ventas por método de pago
-    const salesByPayment = await Sale.findAll({
-      where: dateWhere,
-      attributes: [
-        'payment_method',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-        [sequelize.fn('SUM', sequelize.col('total')), 'total']
-      ],
-      group: ['payment_method'],
-      raw: true
-    });
-
-    // Top productos
-    const topProducts = await SaleItem.findAll({
-      include: [{
-        model: Sale,
-        where: dateWhere,
-        attributes: []
-      }],
-      attributes: [
-        'product_name',
-        [sequelize.fn('SUM', sequelize.col('quantity')), 'total_qty'],
-        [sequelize.fn('SUM', sequelize.col('subtotal')), 'total_amount']
-      ],
-      group: ['product_name'],
-      order: [[sequelize.fn('SUM', sequelize.col('quantity')), 'DESC']],
-      limit: 10,
-      raw: true
-    });
-
-    // Totales generales
-    const totals = await Sale.findOne({
-      where: dateWhere,
-      attributes: [
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count'],
-        [sequelize.fn('SUM', sequelize.col('total')), 'total']
-      ],
-      raw: true
-    });
-
-    res.json({ salesByDay, salesByHour, salesByPayment, topProducts, totals });
-  } catch (error) {
-    console.error('Dashboard error:', error);
-    res.status(500).json({ error: 'Error al obtener datos del dashboard' });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener estadísticas' });
   }
 };
 
-module.exports = { getDashboard };
+const getSalesChart = async (req, res) => {
+  try {
+    const tid = req.tenant.id;
+    const days = parseInt(req.query.days) || 7;
+    const startDate = new Date(); startDate.setDate(startDate.getDate() - days + 1); startDate.setHours(0,0,0,0);
+
+    const sales = await Sale.findAll({
+      where: { tenant_id: tid, status: 'completed', created_at: { [Op.gte]: startDate } },
+      attributes: ['created_at', 'total', 'payment_method']
+    });
+
+    const byDay = {};
+    for (let i = 0; i < days; i++) {
+      const d = new Date(); d.setDate(d.getDate() - (days - 1 - i));
+      const key = d.toISOString().split('T')[0];
+      byDay[key] = { date: key, revenue: 0, count: 0, efectivo: 0, qr: 0, debito: 0 };
+    }
+
+    sales.forEach(s => {
+      const key = new Date(s.created_at).toISOString().split('T')[0];
+      if (byDay[key]) {
+        byDay[key].revenue += parseFloat(s.total);
+        byDay[key].count += 1;
+        byDay[key][s.payment_method] += parseFloat(s.total);
+      }
+    });
+
+    res.json(Object.values(byDay));
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener gráfico' });
+  }
+};
+
+const getTopProducts = async (req, res) => {
+  try {
+    const tid = req.tenant.id;
+    const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0,0,0,0);
+
+    const items = await SaleItem.findAll({
+      include: [{
+        model: Sale, as: undefined,
+        where: { tenant_id: tid, status: 'completed', created_at: { [Op.gte]: monthStart } },
+        attributes: []
+      }],
+      attributes: ['product_name', [fn('SUM', col('quantity')), 'total_qty'], [fn('SUM', col('subtotal')), 'total_revenue']],
+      group: ['product_name'],
+      order: [[literal('total_qty'), 'DESC']],
+      limit: 8
+    });
+    res.json(items);
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener top productos' });
+  }
+};
+
+module.exports = { getStats, getSalesChart, getTopProducts };

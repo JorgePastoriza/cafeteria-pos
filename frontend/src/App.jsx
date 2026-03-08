@@ -1,102 +1,92 @@
 // src/App.jsx
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useParams, Outlet } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { CartProvider } from './context/CartContext';
-import Layout from './components/Layout';
+import { SuperAdminProvider, useSuperAdmin } from './context/SuperAdminContext';
 
-// Pages
+// Pages Tenant
 import Login from './pages/Login';
 import POS from './pages/POS';
-import Cierre from './pages/Cierre';
 import Dashboard from './pages/Dashboard';
 import Productos from './pages/Productos';
 import Stock from './pages/Stock';
 import Ventas from './pages/Ventas';
 import Usuarios from './pages/Usuarios';
+import Cierre from './pages/Cierre';
+import Layout from './components/Layout';
 
-function ProtectedRoute({ children, adminOnly = false }) {
-  const { user, isAdmin } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
-  if (adminOnly && !isAdmin()) return <Navigate to="/pos" replace />;
-  return children;
+// Pages Super Admin
+import SuperAdminLogin from './pages/superadmin/SuperAdminLogin';
+import SuperAdminDashboard from './pages/superadmin/SuperAdminDashboard';
+
+// ── Guards ──
+function TenantProtectedRoute({ adminOnly = false }) {
+  const { user } = useAuth();
+  const { slug } = useParams();
+  if (!user) return <Navigate to={`/${slug}/login`} replace />;
+  if (adminOnly && user.role !== 'admin') return <Navigate to={`/${slug}/pos`} replace />;
+  return <Outlet />;
 }
 
-function AppRoutes() {
-  const { user } = useAuth();
+function SuperAdminProtectedRoute() {
+  const { superAdmin } = useSuperAdmin();
+  if (!superAdmin) return <Navigate to="/superadmin/login" replace />;
+  return <Outlet />;
+}
 
+// ── Tenant layout wrapper ──
+function TenantLayout() {
   return (
-    <Routes>
-      <Route path="/login" element={user ? <Navigate to="/pos" /> : <Login />} />
-
-      <Route path="/pos" element={
-        <ProtectedRoute>
-          <CartProvider>
-            <Layout><POS /></Layout>
-          </CartProvider>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/cierre" element={
-        <ProtectedRoute>
-          <Layout><Cierre /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/dashboard" element={
-        <ProtectedRoute adminOnly>
-          <Layout><Dashboard /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/productos" element={
-        <ProtectedRoute adminOnly>
-          <Layout><Productos /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/stock" element={
-        <ProtectedRoute>
-          <Layout><Stock /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/ventas" element={
-        <ProtectedRoute adminOnly>
-          <Layout><Ventas /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="/usuarios" element={
-        <ProtectedRoute adminOnly>
-          <Layout><Usuarios /></Layout>
-        </ProtectedRoute>
-      } />
-
-      <Route path="*" element={<Navigate to={user ? "/pos" : "/login"} replace />} />
-    </Routes>
+    <Layout>
+      <Outlet />
+    </Layout>
   );
 }
 
 export default function App() {
   return (
     <BrowserRouter>
-      <AuthProvider>
-        <AppRoutes />
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              fontFamily: 'DM Sans, sans-serif',
-              borderRadius: '10px',
-              background: '#1a0a00',
-              color: '#f5e6d3'
-            },
-            success: { iconTheme: { primary: '#4caf7d', secondary: '#f5e6d3' } },
-            error: { iconTheme: { primary: '#e05252', secondary: '#f5e6d3' } }
-          }}
-        />
-      </AuthProvider>
+      <SuperAdminProvider>
+        <AuthProvider>
+          <CartProvider>
+            <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
+            <Routes>
+              {/* Raíz → redirigir */}
+              <Route path="/" element={<Navigate to="/superadmin/login" replace />} />
+
+              {/* ── SUPER ADMIN ── */}
+              <Route path="/superadmin/login" element={<SuperAdminLogin />} />
+              <Route element={<SuperAdminProtectedRoute />}>
+                <Route path="/superadmin" element={<SuperAdminDashboard />} />
+                <Route path="/superadmin/dashboard" element={<SuperAdminDashboard />} />
+              </Route>
+
+              {/* ── TENANT: Login (sin auth) ── */}
+              <Route path="/:slug/login" element={<Login />} />
+
+              {/* ── TENANT: Rutas protegidas ── */}
+              <Route element={<TenantProtectedRoute />}>
+                <Route element={<TenantLayout />}>
+                  <Route path="/:slug/pos" element={<POS />} />
+                  <Route path="/:slug/cierre" element={<Cierre />} />
+                  <Route element={<TenantProtectedRoute adminOnly />}>
+                    <Route path="/:slug/dashboard" element={<Dashboard />} />
+                    <Route path="/:slug/productos" element={<Productos />} />
+                    <Route path="/:slug/ventas" element={<Ventas />} />
+                    <Route path="/:slug/usuarios" element={<Usuarios />} />
+                  </Route>
+                  {/* Stock: todos */}
+                  <Route path="/:slug/stock" element={<Stock />} />
+                </Route>
+              </Route>
+
+              {/* Fallback */}
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </CartProvider>
+        </AuthProvider>
+      </SuperAdminProvider>
     </BrowserRouter>
   );
 }

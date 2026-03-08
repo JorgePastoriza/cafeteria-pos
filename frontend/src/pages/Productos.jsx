@@ -1,6 +1,7 @@
 // src/pages/Productos.jsx
 import { useState, useEffect } from 'react';
-import { productsAPI, categoriesAPI } from '../services/api';
+import { makeSlugAPI } from '../services/api';
+import { useParams } from 'react-router-dom';
 import toast from 'react-hot-toast';
 
 const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
@@ -19,10 +20,10 @@ function ProductModal({ product, categories, onClose, onSave }) {
     setLoading(true);
     try {
       if (product) {
-        await productsAPI.update(product.id, form);
+        await slugAPI.products.update(product.id, form);
         toast.success('Producto actualizado');
       } else {
-        await productsAPI.create(form);
+        await slugAPI.products.create(form);
         toast.success('Producto creado');
       }
       onSave();
@@ -110,6 +111,8 @@ function ProductModal({ product, categories, onClose, onSave }) {
 }
 
 export default function Productos() {
+  const { slug } = useParams();
+  const slugAPI = makeSlugAPI(slug);
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -117,7 +120,7 @@ export default function Productos() {
 
   const fetch = async () => {
     try {
-      const [p, c] = await Promise.all([productsAPI.getAll(), categoriesAPI.getAll()]);
+      const [p, c] = await Promise.all([slugAPI.products.getAll(), slugAPI.categories.getAll()]);
       setProducts(p.data);
       setCategories(c.data);
     } catch { toast.error('Error al cargar'); }
@@ -129,7 +132,7 @@ export default function Productos() {
   const handleDelete = async (id) => {
     if (!window.confirm('¿Desactivar este producto?')) return;
     try {
-      await productsAPI.delete(id);
+      await slugAPI.products.delete(id);
       toast.success('Producto desactivado');
       fetch();
     } catch { toast.error('Error al desactivar'); }
