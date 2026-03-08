@@ -2,11 +2,26 @@
 const { Sale, SaleItem, Product, User, StockMovement, DailyClosure } = require('../models');
 const { Op } = require('sequelize');
 
+// Obtiene la fecha local del servidor en formato YYYY-MM-DD
+// Usa el offset de la variable de entorno TZ o calcula desde el servidor
+const getLocalDateString = () => {
+  const now = new Date();
+  // Usar fecha local del servidor (respeta la variable TZ del sistema)
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
 const generateSaleNumber = (tenantSlug) => {
   const now = new Date();
-  const d = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`;
-  const t = `${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}${String(now.getSeconds()).padStart(2,'0')}`;
-  return `${tenantSlug.toUpperCase()}-${d}-${t}`;
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const mins = String(now.getMinutes()).padStart(2, '0');
+  const secs = String(now.getSeconds()).padStart(2, '0');
+  return `${tenantSlug.toUpperCase()}-${year}${month}${day}-${hours}${mins}${secs}`;
 };
 
 const create = async (req, res) => {
@@ -17,10 +32,16 @@ const create = async (req, res) => {
     if (!items?.length) { await t.rollback(); return res.status(400).json({ error: 'El carrito está vacío' }); }
     if (!payment_method) { await t.rollback(); return res.status(400).json({ error: 'Método de pago requerido' }); }
 
-    // Verificar activo en cierre
-    const today = new Date().toISOString().split('T')[0];
-    const closure = await DailyClosure.findOne({ where: { tenant_id: req.tenant.id, date: today }, transaction: t });
-    if (closure) { await t.rollback(); return res.status(400).json({ error: 'La caja ya fue cerrada hoy' }); }
+    // Verificar cierre usando fecha LOCAL del servidor
+    const today = getLocalDateString();
+    const closure = await DailyClosure.findOne({
+      where: { tenant_id: req.tenant.id, date: today },
+      transaction: t
+    });
+    if (closure) {
+      await t.rollback();
+      return res.status(400).json({ error: `La caja ya fue cerrada hoy (${today}). Podés volver a operar mañana.` });
+    }
 
     let total = 0;
     const saleItems = [];
@@ -67,20 +88,34 @@ const create = async (req, res) => {
     res.status(201).json({ ...sale.toJSON(), items: saleItems.length });
   } catch (e) {
     await t.rollback();
-    console.error(e);
+    console.error('Sale create error:', e);
     res.status(500).json({ error: 'Error al procesar la venta' });
   }
 };
 
 const getAll = async (req, res) => {
   try {
-    const { date, payment_method, page = 1, limit = 50 } = req.query;
-    const where = { tenant_id: req.tenant.id };
-    if (date) where.created_at = { [Op.between]: [`${date} 00:00:00`, `${date} 23:59:59`] };
+    // Soporta: date (un día), from+to (rango), o sin fecha (últimos 50)
+    const { date, from, to, payment_method, page = 1, limit = 100 } = req.query;
+    const where = { tenant_id: req.tenant.id, status: 'completed' };
+
+    if (date) {
+      // Filtro por un día específico
+      where.created_at = { [Op.between]: [`${date} 00:00:00`, `${date} 23:59:59`] };
+    } else if (from && to) {
+      // Filtro por rango de fechas
+      where.created_at = { [Op.between]: [`${from} 00:00:00`, `${to} 23:59:59`] };
+    } else if (from) {
+      // Solo fecha desde
+      where.created_at = { [Op.gte]: `${from} 00:00:00` };
+    }
+
     if (payment_method) where.payment_method = payment_method;
 
     const sales = await Sale.findAll({
-      where, limit: parseInt(limit), offset: (page - 1) * parseInt(limit),
+      where,
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit),
       include: [
         { model: User, as: 'user', attributes: ['id', 'name'] },
         { model: SaleItem, as: 'items' }
@@ -89,6 +124,7 @@ const getAll = async (req, res) => {
     });
     res.json(sales);
   } catch (e) {
+    console.error('Sales getAll error:', e);
     res.status(500).json({ error: 'Error al obtener ventas' });
   }
 };
