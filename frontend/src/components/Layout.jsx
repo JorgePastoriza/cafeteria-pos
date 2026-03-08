@@ -16,6 +16,7 @@ export default function Layout({ children }) {
     { path: `/${slug}/cierre`, icon: '📊', label: 'Cierre Diario' },
     { path: `/${slug}/dashboard`, icon: '📈', label: 'Dashboard' },
     { path: `/${slug}/productos`, icon: '☕', label: 'Productos' },
+    { path: `/${slug}/categorias`, icon: '🏷️', label: 'Categorías' },
     { path: `/${slug}/stock`, icon: '📦', label: 'Stock' },
     { path: `/${slug}/ventas`, icon: '📋', label: 'Historial Ventas' },
     { path: `/${slug}/usuarios`, icon: '👥', label: 'Usuarios' },
