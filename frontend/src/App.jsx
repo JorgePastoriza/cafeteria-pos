@@ -10,6 +10,7 @@ import Login from './pages/Login';
 import POS from './pages/POS';
 import Dashboard from './pages/Dashboard';
 import Productos from './pages/Productos';
+import Categorias from './pages/Categorias';
 import Stock from './pages/Stock';
 import Ventas from './pages/Ventas';
 import Usuarios from './pages/Usuarios';
@@ -73,6 +74,7 @@ export default function App() {
                   <Route element={<TenantProtectedRoute adminOnly />}>
                     <Route path="/:slug/dashboard" element={<Dashboard />} />
                     <Route path="/:slug/productos" element={<Productos />} />
+                    <Route path="/:slug/categorias" element={<Categorias />} />
                     <Route path="/:slug/ventas" element={<Ventas />} />
                     <Route path="/:slug/usuarios" element={<Usuarios />} />
                   </Route>
