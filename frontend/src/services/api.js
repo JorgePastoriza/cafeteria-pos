@@ -44,7 +44,10 @@ export const superAdminAPI = {
   createTenant: (data) => api.post('/superadmin/tenants', data),
   updateTenant: (id, data) => api.put(`/superadmin/tenants/${id}`, data),
   deleteTenant: (id) => api.delete(`/superadmin/tenants/${id}`),
-  getTenantUsers: (id) => api.get(`/superadmin/tenants/${id}/users`)
+  toggleTenant: (id) => api.post(`/superadmin/tenants/${id}/toggle`),
+  getTenantUsers: (id) => api.get(`/superadmin/tenants/${id}/users`),
+  changeUserPassword: (tenantId, userId, password) =>
+    api.put(`/superadmin/tenants/${tenantId}/users/${userId}/password`, { password })
 };
 
 export const makeSlugAPI = (slug) => ({

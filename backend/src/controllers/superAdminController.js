@@ -1,6 +1,7 @@
 // src/controllers/superAdminController.js
 const jwt = require('jsonwebtoken');
 const { SuperAdmin, Tenant, User, Role, Sale, Product } = require('../models');
+const bcrypt = require('bcryptjs');
 const { Op } = require('sequelize');
 
 /** POST /api/superadmin/login */
@@ -40,7 +41,6 @@ const getTenants = async (req, res) => {
       include: [{ model: SuperAdmin, as: 'creator', attributes: ['name'] }]
     });
 
-    // Agregar conteo de usuarios y ventas
     const enriched = await Promise.all(tenants.map(async (t) => {
       const userCount = await User.count({ where: { tenant_id: t.id } });
       const saleCount = await Sale.count({ where: { tenant_id: t.id } });
@@ -53,7 +53,7 @@ const getTenants = async (req, res) => {
   }
 };
 
-/** POST /api/superadmin/tenants - Crear comercio + admin */
+/** POST /api/superadmin/tenants */
 const createTenant = async (req, res) => {
   const { sequelize } = require('../models');
   const t = await sequelize.transaction();
@@ -65,7 +65,6 @@ const createTenant = async (req, res) => {
       return res.status(400).json({ error: 'Faltan campos obligatorios' });
     }
 
-    // Validar slug (solo letras, números y guiones)
     if (!/^[a-z0-9-]+$/.test(slug)) {
       await t.rollback();
       return res.status(400).json({ error: 'El slug solo puede contener letras minúsculas, números y guiones' });
@@ -77,17 +76,12 @@ const createTenant = async (req, res) => {
       return res.status(400).json({ error: 'Ya existe un comercio con ese slug' });
     }
 
-    // Crear tenant
     const tenant = await Tenant.create({
       name, slug, logo_url, primary_color: primary_color || '#e8a045',
       created_by: req.superAdmin.id
     }, { transaction: t });
 
-    // Obtener rol admin
     const adminRole = await Role.findOne({ where: { name: 'admin' } });
-
-    // Crear usuario admin del tenant
-    const bcrypt = require('bcryptjs');
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
     const adminUser = await User.create({
       tenant_id: tenant.id,
@@ -98,7 +92,6 @@ const createTenant = async (req, res) => {
     }, { transaction: t });
 
     await t.commit();
-
     res.status(201).json({
       tenant: tenant.toJSON(),
       adminUser: { id: adminUser.id, name: adminUser.name, email: adminUser.email }
@@ -124,7 +117,7 @@ const updateTenant = async (req, res) => {
   }
 };
 
-/** DELETE /api/superadmin/tenants/:id */
+/** DELETE /api/superadmin/tenants/:id — desactiva */
 const deleteTenant = async (req, res) => {
   try {
     const tenant = await Tenant.findByPk(req.params.id);
@@ -136,17 +129,58 @@ const deleteTenant = async (req, res) => {
   }
 };
 
+/** POST /api/superadmin/tenants/:id/toggle — activa o desactiva */
+const toggleTenant = async (req, res) => {
+  try {
+    const tenant = await Tenant.findByPk(req.params.id);
+    if (!tenant) return res.status(404).json({ error: 'Comercio no encontrado' });
+    await tenant.update({ active: !tenant.active });
+    res.json({
+      id: tenant.id,
+      name: tenant.name,
+      active: tenant.active,
+      message: tenant.active ? 'Comercio activado' : 'Comercio desactivado'
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'Error al cambiar estado' });
+  }
+};
+
 /** GET /api/superadmin/tenants/:id/users */
 const getTenantUsers = async (req, res) => {
   try {
     const users = await User.findAll({
       where: { tenant_id: req.params.id },
       include: [{ model: Role, as: 'role' }],
-      attributes: { exclude: ['password'] }
+      attributes: { exclude: ['password'] },
+      order: [['name', 'ASC']]
     });
     res.json(users);
   } catch (e) {
     res.status(500).json({ error: 'Error al obtener usuarios' });
+  }
+};
+
+/** PUT /api/superadmin/tenants/:tenantId/users/:userId/password */
+const changeUserPassword = async (req, res) => {
+  try {
+    const { tenantId, userId } = req.params;
+    const { password } = req.body;
+
+    if (!password || password.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    const user = await User.findOne({ where: { id: userId, tenant_id: tenantId } });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    const hashed = await bcrypt.hash(password, 10);
+    await user.update({ password: hashed });
+
+    res.json({ message: `Contraseña de ${user.name} actualizada correctamente` });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'Error al cambiar contraseña' });
   }
 };
 
@@ -166,4 +200,7 @@ const getStats = async (req, res) => {
   }
 };
 
-module.exports = { login, me, getTenants, createTenant, updateTenant, deleteTenant, getTenantUsers, getStats };
+module.exports = {
+  login, me, getTenants, createTenant, updateTenant,
+  deleteTenant, toggleTenant, getTenantUsers, changeUserPassword, getStats
+};
