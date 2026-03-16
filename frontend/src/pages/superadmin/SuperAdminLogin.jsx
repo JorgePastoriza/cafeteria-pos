@@ -85,7 +85,7 @@ export default function SuperAdminLogin() {
             </label>
             <input
               type="email" value={email} onChange={e => setEmail(e.target.value)}
-              placeholder="superadmin@cafepos.com" autoFocus
+              placeholder="user@mail.com" autoFocus
               style={{
                 padding: '12px 16px', borderRadius: 10, border: '1.5px solid rgba(232,160,69,0.2)',
                 background: 'rgba(255,255,255,0.05)', color: 'white',

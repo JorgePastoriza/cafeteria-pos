@@ -8,6 +8,14 @@ const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFr
 
 const EMPTY_FORM = { name: '', description: '', price: '', stock: '', stock_min: 5, category_id: '', type: 'cafe', image_url: '', active: true };
 
+const LOCAL_IMAGES = [
+  { label: 'Café',      src: '/images/cafe.jpg' },
+  { label: 'Gaseosa',   src: '/images/gaseosa.jpg' },
+  { label: 'Cubanito',  src: '/images/cubanito.jpg' },
+  { label: 'Medialuna', src: '/images/medialuna.jpg' },
+  { label: 'Varios',    src: '/images/varios.jpg' },
+];
+
 function ProductModal({ product, categories, onClose, onSave, slugAPI }) {
   const [form, setForm] = useState(product ? { ...product, price: product.price, stock: product.stock, stock_min: product.stock_min } : EMPTY_FORM);
   const [loading, setLoading] = useState(false);
@@ -93,10 +101,52 @@ function ProductModal({ product, categories, onClose, onSave, slugAPI }) {
                 </select>
               </div>
             </div>
+
+            {/* ── Selector de imagen ── */}
             <div className="form-group">
-              <label className="form-label">URL de imagen</label>
-              <input className="form-control" value={form.image_url} onChange={e => set('image_url', e.target.value)} placeholder="https://..." />
+              <label className="form-label">Imagen</label>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '8px 0' }}>
+                {LOCAL_IMAGES.map(img => {
+                  const selected = form.image_url === img.src;
+                  return (
+                    <div
+                      key={img.src}
+                      onClick={() => set('image_url', img.src)}
+                      style={{
+                        cursor: 'pointer',
+                        borderRadius: 8,
+                        border: selected ? '2px solid var(--primary)' : '2px solid var(--border)',
+                        overflow: 'hidden',
+                        textAlign: 'center',
+                        width: 72,
+                        flexShrink: 0,
+                        background: selected ? 'var(--primary-light, #e8f4ff)' : 'transparent',
+                        transition: 'all 0.15s',
+                        boxShadow: selected ? '0 0 0 2px var(--primary)' : 'none'
+                      }}
+                    >
+                      <img
+                        src={img.src}
+                        alt={img.label}
+                        style={{ width: 72, height: 56, objectFit: 'cover', display: 'block' }}
+                        onError={e => { e.target.style.background = '#eee'; e.target.style.display = 'block'; e.target.alt = '?'; }}
+                      />
+                      <div style={{ fontSize: 11, padding: '3px 0', color: selected ? 'var(--primary)' : 'var(--text-muted)', fontWeight: selected ? 600 : 400 }}>
+                        {img.label}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <input
+                className="form-control"
+                value={form.image_url}
+                onChange={e => set('image_url', e.target.value)}
+                placeholder="O pegá una URL externa..."
+                style={{ marginTop: 6 }}
+              />
             </div>
+
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
@@ -118,7 +168,7 @@ export default function Productos() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null); // null | 'new' | product
 
-  const fetch = async () => {
+  const fetchData = async () => {
     try {
       const [p, c] = await Promise.all([slugAPI.products.getAll(), slugAPI.categories.getAll()]);
       setProducts(p.data);
@@ -127,14 +177,14 @@ export default function Productos() {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetch(); }, []);
+  useEffect(() => { fetchData(); }, []);
 
   const handleDelete = async (id) => {
     if (!window.confirm('¿Desactivar este producto?')) return;
     try {
       await slugAPI.products.delete(id);
       toast.success('Producto desactivado');
-      fetch();
+      fetchData();
     } catch { toast.error('Error al desactivar'); }
   };
 
@@ -171,7 +221,7 @@ export default function Productos() {
                     return (
                       <tr key={p.id}>
                         <td>
-                          <img src={p.image_url || 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=60'} alt={p.name}
+                          <img src={p.image_url || '/images/varios.jpg'} alt={p.name}
                             style={{ width: 44, height: 44, objectFit: 'cover', borderRadius: 8 }}
                             onError={e => { e.target.src = 'https://images.unsplash.com/photo-1495474472287-4d71bcdd2085?w=60'; }}
                           />
@@ -214,7 +264,7 @@ export default function Productos() {
           product={modal === 'new' ? null : modal}
           categories={categories}
           onClose={() => setModal(null)}
-          onSave={fetch}
+          onSave={fetchData}
           slugAPI={slugAPI}
         />
       )}
