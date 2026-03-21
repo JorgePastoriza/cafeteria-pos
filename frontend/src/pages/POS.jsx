@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { makeSlugAPI } from '../services/api';
 import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 import toast from 'react-hot-toast';
 
 const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
@@ -67,7 +68,7 @@ function CartContent({ onSaleComplete, onClose, slugAPI, deliverySurcharge }) {
       const saleData = res.data;
       if (isDelivery && parseFloat(saleData.delivery_surcharge_amount || 0) > 0) {
         toast.success(
-          `✅ Venta ${saleData.sale_number} registrada!\n🛵 Recargo: ${formatPrice(saleData.delivery_surcharge_amount)}`,
+          `✅ Venta ${saleData.sale_number} registrada! — Recargo delivery: ${formatPrice(saleData.delivery_surcharge_amount)}`,
           { duration: 4000 }
         );
       } else {
@@ -93,7 +94,6 @@ function CartContent({ onSaleComplete, onClose, slugAPI, deliverySurcharge }) {
   return (
     <>
       <div className="cart-drawer-handle" />
-
       <div className="cart-header">
         <div className="cart-header-left">
           <div className="cart-title">🛒 Carrito</div>
@@ -238,19 +238,19 @@ export default function POS() {
     }
   }, [filterType, filterCategory, search]);
 
-  // Solo admin puede leer /tenant/settings
-  // Si no es admin o falla (ej: migración no corrida), simplemente no hay recargo
+  // Fetch del recargo usando axios directamente para no depender
+  // de que makeSlugAPI tenga el objeto tenant
   useEffect(() => {
     if (!isAdmin()) return;
-    slugAPI.tenant.getSettings()
+    api.get(`/api/${slug}/tenant/settings`)
       .then(r => {
-        const pct = parseFloat(r.data.delivery_surcharge);
-        setDeliverySurcharge(isNaN(pct) ? 0 : pct);
+        const pct = parseFloat(r.data?.delivery_surcharge);
+        if (!isNaN(pct)) setDeliverySurcharge(pct);
       })
       .catch(() => {
-        // No bloquear el POS si este endpoint falla
+        // Silencioso: si el endpoint no existe todavía, el POS funciona sin recargo
       });
-  }, []);
+  }, [slug]);
 
   useEffect(() => {
     slugAPI.categories.getAll().then(r => setCategories(r.data)).catch(() => {});
