@@ -1,12 +1,9 @@
 // src/controllers/salesController.js
-const { Sale, SaleItem, Product, User, StockMovement, DailyClosure } = require('../models');
+const { Sale, SaleItem, Product, User, StockMovement, DailyClosure, Tenant } = require('../models');
 const { Op } = require('sequelize');
 
-// Obtiene la fecha local del servidor en formato YYYY-MM-DD
-// Usa el offset de la variable de entorno TZ o calcula desde el servidor
 const getLocalDateString = () => {
   const now = new Date();
-  // Usar fecha local del servidor (respeta la variable TZ del sistema)
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, '0');
   const day = String(now.getDate()).padStart(2, '0');
@@ -28,11 +25,22 @@ const create = async (req, res) => {
   const { sequelize } = require('../models');
   const t = await sequelize.transaction();
   try {
-    const { items, payment_method } = req.body;
-    if (!items?.length) { await t.rollback(); return res.status(400).json({ error: 'El carrito está vacío' }); }
-    if (!payment_method) { await t.rollback(); return res.status(400).json({ error: 'Método de pago requerido' }); }
+    const { items, payment_method, delivery_type = 'local' } = req.body;
 
-    // Verificar cierre usando fecha LOCAL del servidor
+    if (!items?.length) {
+      await t.rollback();
+      return res.status(400).json({ error: 'El carrito está vacío' });
+    }
+    if (!payment_method) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Método de pago requerido' });
+    }
+    if (!['local', 'delivery'].includes(delivery_type)) {
+      await t.rollback();
+      return res.status(400).json({ error: 'Modalidad de entrega inválida' });
+    }
+
+    // Verificar cierre del día
     const today = getLocalDateString();
     const closure = await DailyClosure.findOne({
       where: { tenant_id: req.tenant.id, date: today },
@@ -40,52 +48,101 @@ const create = async (req, res) => {
     });
     if (closure) {
       await t.rollback();
-      return res.status(400).json({ error: `La caja ya fue cerrada hoy (${today}). Podés volver a operar mañana.` });
+      return res.status(400).json({
+        error: `La caja ya fue cerrada hoy (${today}). Podés volver a operar mañana.`
+      });
     }
 
-    let total = 0;
+    // Obtener configuración de delivery del tenant
+    const tenant = await Tenant.findByPk(req.tenant.id, { transaction: t });
+    const deliverySurchargePct = delivery_type === 'delivery'
+      ? parseFloat(tenant.delivery_surcharge || 0)
+      : 0;
+
+    // Calcular subtotal de productos
+    let subtotalProducts = 0;
     const saleItems = [];
 
     for (const item of items) {
       const product = await Product.findOne({
         where: { id: item.product_id, tenant_id: req.tenant.id, active: true },
-        transaction: t, lock: true
+        transaction: t,
+        lock: true
       });
-      if (!product) { await t.rollback(); return res.status(400).json({ error: `Producto ${item.product_id} no encontrado` }); }
-      if (product.stock < item.quantity) { await t.rollback(); return res.status(400).json({ error: `Stock insuficiente para ${product.name}` }); }
+      if (!product) {
+        await t.rollback();
+        return res.status(400).json({ error: `Producto ${item.product_id} no encontrado` });
+      }
+      if (product.stock < item.quantity) {
+        await t.rollback();
+        return res.status(400).json({ error: `Stock insuficiente para ${product.name}` });
+      }
 
       const subtotal = parseFloat(product.price) * item.quantity;
-      total += subtotal;
+      subtotalProducts += subtotal;
       saleItems.push({ product, quantity: item.quantity, subtotal, price: product.price });
     }
 
+    // Calcular recargo delivery
+    const deliverySurchargeAmount = parseFloat(
+      ((subtotalProducts * deliverySurchargePct) / 100).toFixed(2)
+    );
+    const totalFinal = parseFloat((subtotalProducts + deliverySurchargeAmount).toFixed(2));
+
+    // Crear la venta
     const sale = await Sale.create({
       tenant_id: req.tenant.id,
       sale_number: generateSaleNumber(req.tenant.slug),
       user_id: req.user.id,
-      payment_method, total, status: 'completed'
+      payment_method,
+      delivery_type,
+      delivery_surcharge_pct: deliverySurchargePct,
+      delivery_surcharge_amount: deliverySurchargeAmount,
+      subtotal_before_surcharge: subtotalProducts,
+      total: totalFinal,
+      status: 'completed'
     }, { transaction: t });
 
+    // Crear ítems y descontar stock
     for (const item of saleItems) {
       await SaleItem.create({
-        sale_id: sale.id, product_id: item.product.id,
-        product_name: item.product.name, product_price: item.price,
-        quantity: item.quantity, subtotal: item.subtotal
+        sale_id: sale.id,
+        product_id: item.product.id,
+        product_name: item.product.name,
+        product_price: item.price,
+        quantity: item.quantity,
+        subtotal: item.subtotal
       }, { transaction: t });
 
       const prevStock = item.product.stock;
       await item.product.update({ stock: prevStock - item.quantity }, { transaction: t });
 
       await StockMovement.create({
-        tenant_id: req.tenant.id, product_id: item.product.id,
-        type: 'sale', quantity: -item.quantity,
-        previous_stock: prevStock, new_stock: prevStock - item.quantity,
-        user_id: req.user.id, sale_id: sale.id
+        tenant_id: req.tenant.id,
+        product_id: item.product.id,
+        type: 'sale',
+        quantity: -item.quantity,
+        previous_stock: prevStock,
+        new_stock: prevStock - item.quantity,
+        user_id: req.user.id,
+        sale_id: sale.id
       }, { transaction: t });
     }
 
     await t.commit();
-    res.status(201).json({ ...sale.toJSON(), items: saleItems.length });
+
+    res.status(201).json({
+      ...sale.toJSON(),
+      items: saleItems.length,
+      // Info útil para el frontend
+      delivery_info: {
+        type: delivery_type,
+        surcharge_pct: deliverySurchargePct,
+        surcharge_amount: deliverySurchargeAmount,
+        subtotal_products: subtotalProducts,
+        total_final: totalFinal
+      }
+    });
   } catch (e) {
     await t.rollback();
     console.error('Sale create error:', e);
@@ -95,22 +152,19 @@ const create = async (req, res) => {
 
 const getAll = async (req, res) => {
   try {
-    // Soporta: date (un día), from+to (rango), o sin fecha (últimos 50)
-    const { date, from, to, payment_method, page = 1, limit = 100 } = req.query;
+    const { date, from, to, payment_method, delivery_type, page = 1, limit = 100 } = req.query;
     const where = { tenant_id: req.tenant.id, status: 'completed' };
 
     if (date) {
-      // Filtro por un día específico
       where.created_at = { [Op.between]: [`${date} 00:00:00`, `${date} 23:59:59`] };
     } else if (from && to) {
-      // Filtro por rango de fechas
       where.created_at = { [Op.between]: [`${from} 00:00:00`, `${to} 23:59:59`] };
     } else if (from) {
-      // Solo fecha desde
       where.created_at = { [Op.gte]: `${from} 00:00:00` };
     }
 
     if (payment_method) where.payment_method = payment_method;
+    if (delivery_type) where.delivery_type = delivery_type;
 
     const sales = await Sale.findAll({
       where,

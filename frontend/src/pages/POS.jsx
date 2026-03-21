@@ -3,6 +3,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { makeSlugAPI } from '../services/api';
 import { useCart } from '../context/CartContext';
+import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 import toast from 'react-hot-toast';
 
 const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
@@ -46,9 +48,13 @@ function ProductCard({ product, onAdd }) {
   );
 }
 
-function CartContent({ onSaleComplete, onClose, slugAPI }) {
+function CartContent({ onSaleComplete, onClose, slugAPI, deliverySurcharge }) {
   const { items, paymentMethod, setPaymentMethod, removeItem, updateQuantity, clearCart, total, itemCount } = useCart();
   const [loading, setLoading] = useState(false);
+
+  const isDelivery = paymentMethod === 'delivery';
+  const surchargeAmount = isDelivery ? total * (deliverySurcharge / 100) : 0;
+  const finalTotal = total + surchargeAmount;
 
   const handleSale = async () => {
     if (items.length === 0) { toast.error('El carrito está vacío'); return; }
@@ -59,7 +65,15 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
         items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
         payment_method: paymentMethod
       });
-      toast.success(`✅ Venta ${res.data.sale_number} registrada!`);
+      const saleData = res.data;
+      if (isDelivery && parseFloat(saleData.delivery_surcharge_amount || 0) > 0) {
+        toast.success(
+          `✅ Venta ${saleData.sale_number} registrada! — Recargo delivery: ${formatPrice(saleData.delivery_surcharge_amount)}`,
+          { duration: 4000 }
+        );
+      } else {
+        toast.success(`✅ Venta ${saleData.sale_number} registrada!`);
+      }
       clearCart();
       onSaleComplete?.();
       onClose?.();
@@ -70,11 +84,16 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
     }
   };
 
+  const paymentOptions = [
+    { key: 'efectivo', icon: '💵', label: 'Efectivo' },
+    { key: 'qr', icon: '📱', label: 'QR' },
+    { key: 'debito', icon: '💳', label: 'Débito' },
+    { key: 'delivery', icon: '🛵', label: 'Delivery' },
+  ];
+
   return (
     <>
-      {/* Handle para arrastrar en mobile */}
       <div className="cart-drawer-handle" />
-
       <div className="cart-header">
         <div className="cart-header-left">
           <div className="cart-title">🛒 Carrito</div>
@@ -114,25 +133,57 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
 
       <div className="cart-footer">
         <div className="separator" />
-        <div className="cart-total-row">
-          <span className="cart-total-label">Total</span>
-          <span className="cart-total-value">{formatPrice(total)}</span>
+
+        {isDelivery && items.length > 0 && (
+          <div className="cart-total-row" style={{ marginBottom: 4 }}>
+            <span className="cart-total-label" style={{ fontSize: 13 }}>Subtotal productos</span>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>{formatPrice(total)}</span>
+          </div>
+        )}
+
+        {isDelivery && deliverySurcharge > 0 && items.length > 0 && (
+          <div className="cart-total-row" style={{ marginBottom: 8 }}>
+            <span className="cart-total-label" style={{ fontSize: 13, color: 'var(--warning)' }}>
+              🛵 Recargo delivery ({deliverySurcharge}%)
+            </span>
+            <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--warning)' }}>
+              +{formatPrice(surchargeAmount)}
+            </span>
+          </div>
+        )}
+
+        <div className="cart-total-row" style={{ marginBottom: 12 }}>
+          <span className="cart-total-label">Total{isDelivery ? ' final' : ''}</span>
+          <span className="cart-total-value">{formatPrice(finalTotal)}</span>
         </div>
 
+        {isDelivery && deliverySurcharge === 0 && (
+          <div style={{
+            fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px',
+            background: 'var(--foam)', borderRadius: 6, textAlign: 'center'
+          }}>
+            Sin recargo configurado para delivery
+          </div>
+        )}
+
         <div className="section-title">Método de pago</div>
-        <div className="payment-methods">
-          {[
-            { key: 'efectivo', icon: '💵', label: 'Efectivo' },
-            { key: 'qr', icon: '📱', label: 'QR' },
-            { key: 'debito', icon: '💳', label: 'Débito' }
-          ].map(p => (
+        <div className="payment-methods" style={{ gridTemplateColumns: '1fr 1fr' }}>
+          {paymentOptions.map(p => (
             <button
               key={p.key}
               className={`payment-btn ${paymentMethod === p.key ? 'selected' : ''}`}
               onClick={() => setPaymentMethod(p.key)}
+              style={p.key === 'delivery' && paymentMethod === p.key
+                ? { background: '#1a0a00', color: '#f5c680', borderColor: '#1a0a00' }
+                : {}}
             >
               <span className="pay-icon">{p.icon}</span>
               {p.label}
+              {p.key === 'delivery' && deliverySurcharge > 0 && (
+                <span style={{ fontSize: 10, display: 'block', opacity: 0.8, marginTop: 1 }}>
+                  +{deliverySurcharge}%
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -142,7 +193,10 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
           onClick={handleSale}
           disabled={loading || items.length === 0 || !paymentMethod}
         >
-          {loading ? <><span className="spinner" /> Procesando...</> : '✓ Confirmar Venta'}
+          {loading
+            ? <><span className="spinner" /> Procesando...</>
+            : `✓ Confirmar Venta${isDelivery && finalTotal !== total ? ` · ${formatPrice(finalTotal)}` : ''}`
+          }
         </button>
 
         {items.length > 0 && (
@@ -158,6 +212,7 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
 export default function POS() {
   const { slug } = useParams();
   const slugAPI = makeSlugAPI(slug);
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -165,9 +220,8 @@ export default function POS() {
   const [filterCategory, setFilterCategory] = useState('');
   const [search, setSearch] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
+  const [deliverySurcharge, setDeliverySurcharge] = useState(0);
   const { addItem, itemCount, total } = useCart();
-
-  const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -184,6 +238,20 @@ export default function POS() {
     }
   }, [filterType, filterCategory, search]);
 
+  // Fetch del recargo usando axios directamente para no depender
+  // de que makeSlugAPI tenga el objeto tenant
+  useEffect(() => {
+    if (!isAdmin()) return;
+    api.get(`/api/${slug}/tenant/settings`)
+      .then(r => {
+        const pct = parseFloat(r.data?.delivery_surcharge);
+        if (!isNaN(pct)) setDeliverySurcharge(pct);
+      })
+      .catch(() => {
+        // Silencioso: si el endpoint no existe todavía, el POS funciona sin recargo
+      });
+  }, [slug]);
+
   useEffect(() => {
     slugAPI.categories.getAll().then(r => setCategories(r.data)).catch(() => {});
   }, []);
@@ -193,14 +261,12 @@ export default function POS() {
     return () => clearTimeout(t);
   }, [fetchProducts]);
 
-  // Cerrar drawer con Escape
   useEffect(() => {
     const handleKey = (e) => { if (e.key === 'Escape') setCartOpen(false); };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
   }, []);
 
-  // Bloquear scroll cuando el drawer está abierto
   useEffect(() => {
     document.body.style.overflow = cartOpen ? 'hidden' : '';
     return () => { document.body.style.overflow = ''; };
@@ -213,9 +279,7 @@ export default function POS() {
   return (
     <>
       <div className="pos-layout">
-        {/* ── PRODUCTOS ── */}
         <div className="pos-products">
-          {/* Filtros */}
           <div className="filters-bar">
             <button
               className={`filter-chip ${!filterType ? 'active' : ''}`}
@@ -266,13 +330,15 @@ export default function POS() {
           )}
         </div>
 
-        {/* ── CARRITO DESKTOP ── */}
         <div className="pos-cart">
-          <CartContent onSaleComplete={fetchProducts} slugAPI={slugAPI} />
+          <CartContent
+            onSaleComplete={fetchProducts}
+            slugAPI={slugAPI}
+            deliverySurcharge={deliverySurcharge}
+          />
         </div>
       </div>
 
-      {/* ── FAB CARRITO MOBILE ── */}
       {itemCount > 0 && (
         <button className="cart-fab" onClick={() => setCartOpen(true)}>
           🛒
@@ -281,18 +347,17 @@ export default function POS() {
         </button>
       )}
 
-      {/* ── DRAWER OVERLAY ── */}
       <div
         className={`cart-drawer-overlay ${cartOpen ? 'open' : ''}`}
         onClick={() => setCartOpen(false)}
       />
 
-      {/* ── CARRITO MOBILE (DRAWER) ── */}
       <div className={`pos-cart drawer ${cartOpen ? 'open' : ''}`}>
         <CartContent
           onSaleComplete={fetchProducts}
           onClose={() => setCartOpen(false)}
           slugAPI={slugAPI}
+          deliverySurcharge={deliverySurcharge}
         />
       </div>
     </>

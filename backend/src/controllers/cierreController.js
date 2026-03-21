@@ -1,9 +1,7 @@
 // src/controllers/cierreController.js
 const { Sale, DailyClosure, SaleItem, Product, User } = require('../models');
-const { Op, fn, col } = require('sequelize');
+const { Op } = require('sequelize');
 
-// Fecha local del servidor (respeta TZ del sistema operativo)
-// En Railway/Render se puede configurar TZ=America/Argentina/Buenos_Aires
 const getLocalDateString = () => {
   const now = new Date();
   const year = now.getFullYear();
@@ -19,7 +17,6 @@ const getToday = async (req, res) => {
 
     const closure = await DailyClosure.findOne({ where: { tenant_id: tid, date: today } });
 
-    // Ventas del día usando LIKE para evitar problemas de zona horaria
     const sales = await Sale.findAll({
       where: {
         tenant_id: tid,
@@ -31,12 +28,26 @@ const getToday = async (req, res) => {
       include: [{ model: SaleItem, as: 'items' }]
     });
 
-    const summary = { efectivo: 0, qr: 0, debito: 0, total: 0, count: sales.length };
+    const summary = {
+      efectivo: 0, qr: 0, debito: 0,
+      local: 0, delivery: 0,
+      delivery_surcharge_total: 0,
+      total: 0, count: sales.length
+    };
+
     sales.forEach(s => {
       const amount = parseFloat(s.total);
+      // Por método de pago
       if (s.payment_method === 'efectivo') summary.efectivo += amount;
       else if (s.payment_method === 'qr') summary.qr += amount;
       else if (s.payment_method === 'debito') summary.debito += amount;
+      // Por modalidad de entrega
+      if (s.delivery_type === 'delivery') {
+        summary.delivery += amount;
+        summary.delivery_surcharge_total += parseFloat(s.delivery_surcharge_amount || 0);
+      } else {
+        summary.local += amount;
+      }
       summary.total += amount;
     });
 
