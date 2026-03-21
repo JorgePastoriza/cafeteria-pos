@@ -12,6 +12,7 @@ const usersCtrl = require('../controllers/usersController');
 const stockCtrl = require('../controllers/stockController');
 const cierreCtrl = require('../controllers/cierreController');
 const saCtrl = require('../controllers/superAdminController');
+const tenantCtrl = require('../controllers/tenantController');  // ← NUEVO
 
 // ============================================================
 // HEALTH
@@ -33,8 +34,6 @@ router.get('/superadmin/tenants', authenticateSuperAdmin, saCtrl.getTenants);
 router.post('/superadmin/tenants', authenticateSuperAdmin, saCtrl.createTenant);
 router.put('/superadmin/tenants/:id', authenticateSuperAdmin, saCtrl.updateTenant);
 router.delete('/superadmin/tenants/:id', authenticateSuperAdmin, saCtrl.deleteTenant);
-
-// Nuevas rutas superadmin
 router.post('/superadmin/tenants/:id/toggle', authenticateSuperAdmin, saCtrl.toggleTenant);
 router.get('/superadmin/tenants/:id/users', authenticateSuperAdmin, saCtrl.getTenantUsers);
 router.put('/superadmin/tenants/:tenantId/users/:userId/password', authenticateSuperAdmin, saCtrl.changeUserPassword);
@@ -47,32 +46,43 @@ const tenantRouter = require('express').Router({ mergeParams: true });
 tenantRouter.post('/auth/login', authCtrl.login);
 tenantRouter.get('/auth/me', authenticate, checkTenantAccess, authCtrl.me);
 
+// ── Configuración del tenant (solo admin) ──
+tenantRouter.get('/tenant/settings', authenticate, checkTenantAccess, authorize('admin'), tenantCtrl.getSettings);
+tenantRouter.put('/tenant/settings', authenticate, checkTenantAccess, authorize('admin'), tenantCtrl.updateSettings);
+
+// ── Productos ──
 tenantRouter.get('/products', authenticate, checkTenantAccess, productCtrl.getAll);
 tenantRouter.get('/products/:id', authenticate, checkTenantAccess, productCtrl.getById);
 tenantRouter.post('/products', authenticate, checkTenantAccess, authorize('admin'), productCtrl.create);
 tenantRouter.put('/products/:id', authenticate, checkTenantAccess, authorize('admin'), productCtrl.update);
 tenantRouter.delete('/products/:id', authenticate, checkTenantAccess, authorize('admin'), productCtrl.remove);
 
+// ── Categorías ──
 tenantRouter.get('/categories', authenticate, checkTenantAccess, categoryCtrl.getAll);
 tenantRouter.post('/categories', authenticate, checkTenantAccess, authorize('admin'), categoryCtrl.create);
 tenantRouter.put('/categories/:id', authenticate, checkTenantAccess, authorize('admin'), categoryCtrl.update);
 tenantRouter.delete('/categories/:id', authenticate, checkTenantAccess, authorize('admin'), categoryCtrl.remove);
 
+// ── Ventas ──
 tenantRouter.post('/sales', authenticate, checkTenantAccess, salesCtrl.create);
 tenantRouter.get('/sales', authenticate, checkTenantAccess, authorize('admin'), salesCtrl.getAll);
 tenantRouter.get('/sales/:id', authenticate, checkTenantAccess, salesCtrl.getById);
 
+// ── Stock ──
 tenantRouter.post('/stock/adjust', authenticate, checkTenantAccess, stockCtrl.adjustStock);
 tenantRouter.get('/stock/movements', authenticate, checkTenantAccess, stockCtrl.getMovements);
 
+// ── Cierre ──
 tenantRouter.get('/cierre/today', authenticate, checkTenantAccess, cierreCtrl.getToday);
 tenantRouter.post('/cierre/close', authenticate, checkTenantAccess, cierreCtrl.close);
 tenantRouter.get('/cierre/history', authenticate, checkTenantAccess, authorize('admin'), cierreCtrl.getHistory);
 
+// ── Dashboard ──
 tenantRouter.get('/dashboard/stats', authenticate, checkTenantAccess, authorize('admin'), dashCtrl.getStats);
 tenantRouter.get('/dashboard/chart', authenticate, checkTenantAccess, authorize('admin'), dashCtrl.getSalesChart);
 tenantRouter.get('/dashboard/top-products', authenticate, checkTenantAccess, authorize('admin'), dashCtrl.getTopProducts);
 
+// ── Usuarios ──
 tenantRouter.get('/users', authenticate, checkTenantAccess, authorize('admin'), usersCtrl.getAll);
 tenantRouter.post('/users', authenticate, checkTenantAccess, authorize('admin'), usersCtrl.create);
 tenantRouter.put('/users/:id', authenticate, checkTenantAccess, authorize('admin'), usersCtrl.update);

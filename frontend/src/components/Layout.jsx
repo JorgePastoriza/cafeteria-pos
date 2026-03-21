@@ -20,7 +20,9 @@ export default function Layout({ children }) {
     { path: `/${slug}/stock`, icon: '📦', label: 'Stock' },
     { path: `/${slug}/ventas`, icon: '📋', label: 'Historial Ventas' },
     { path: `/${slug}/usuarios`, icon: '👥', label: 'Usuarios' },
+    { path: `/${slug}/configuracion`, icon: '⚙️', label: 'Configuración' },  // ← NUEVO
   ];
+
   const NAV_ITEMS_CAJERO = [
     { path: `/${slug}/pos`, icon: '🛒', label: 'Punto de Venta' },
     { path: `/${slug}/cierre`, icon: '📊', label: 'Cierre Diario' },
@@ -28,7 +30,6 @@ export default function Layout({ children }) {
   ];
 
   const navItems = isAdmin() ? NAV_ITEMS_ADMIN : NAV_ITEMS_CAJERO;
-  const currentPage = navItems.find(item => location.pathname === item.path);
 
   useEffect(() => { setSidebarOpen(false); }, [location.pathname]);
   useEffect(() => {
@@ -56,7 +57,7 @@ export default function Layout({ children }) {
         <button className="topbar-menu-btn" onClick={() => setSidebarOpen(true)} aria-label="Abrir menú">☰</button>
         <span className="topbar-title">
           {tenant?.logo_url
-            ? <img src={tenant.logo_url} alt={tenant.name} style={{ height: 28, maxWidth: 120, objectFit: 'contain', verticalAlign: 'middle' }} onError={e => { e.target.style.display='none'; }} />
+            ? <img src={tenant.logo_url} alt={tenant.name} style={{ height: 28, maxWidth: 120, objectFit: 'contain', verticalAlign: 'middle' }} onError={e => { e.target.style.display = 'none'; }} />
             : (tenant?.name || '☕ CaféPOS')}
         </span>
         <div className="topbar-user" style={{ background: accentColor }} title={user?.name}>
@@ -74,7 +75,7 @@ export default function Layout({ children }) {
             {tenant?.logo_url ? (
               <img src={tenant.logo_url} alt={tenant.name}
                 style={{ height: 32, maxWidth: 140, objectFit: 'contain' }}
-                onError={e => { e.target.style.display='none'; }}
+                onError={e => { e.target.style.display = 'none'; }}
               />
             ) : (
               <>

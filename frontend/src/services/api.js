@@ -89,7 +89,14 @@ export const makeSlugAPI = (slug) => ({
     update: (id, data) => api.put(u(slug, `/users/${id}`), data),
     delete: (id) => api.delete(u(slug, `/users/${id}`))
   },
-  roles: { getAll: () => api.get(u(slug, '/roles')) }
+  roles: {
+    getAll: () => api.get(u(slug, '/roles'))
+  },
+  // ── NUEVO: Configuración del tenant ──
+  tenantSettings: {
+    get: () => api.get(u(slug, '/tenant/settings')),
+    update: (data) => api.put(u(slug, '/tenant/settings'), data)
+  }
 });
 
 export default api;

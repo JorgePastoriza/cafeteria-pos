@@ -15,6 +15,7 @@ import Stock from './pages/Stock';
 import Ventas from './pages/Ventas';
 import Usuarios from './pages/Usuarios';
 import Cierre from './pages/Cierre';
+import Configuracion from './pages/Configuracion';   // ← NUEVO
 import Layout from './components/Layout';
 
 // Pages Super Admin
@@ -36,7 +37,6 @@ function SuperAdminProtectedRoute() {
   return <Outlet />;
 }
 
-// ── Tenant layout wrapper ──
 function TenantLayout() {
   return (
     <Layout>
@@ -53,7 +53,6 @@ export default function App() {
           <CartProvider>
             <Toaster position="top-right" toastOptions={{ duration: 3000 }} />
             <Routes>
-              {/* Raíz → redirigir */}
               <Route path="/" element={<Navigate to="/superadmin/login" replace />} />
 
               {/* ── SUPER ADMIN ── */}
@@ -63,7 +62,7 @@ export default function App() {
                 <Route path="/superadmin/dashboard" element={<SuperAdminDashboard />} />
               </Route>
 
-              {/* ── TENANT: Login (sin auth) ── */}
+              {/* ── TENANT: Login ── */}
               <Route path="/:slug/login" element={<Login />} />
 
               {/* ── TENANT: Rutas protegidas ── */}
@@ -71,19 +70,20 @@ export default function App() {
                 <Route element={<TenantLayout />}>
                   <Route path="/:slug/pos" element={<POS />} />
                   <Route path="/:slug/cierre" element={<Cierre />} />
+                  <Route path="/:slug/stock" element={<Stock />} />
+
+                  {/* Solo admin */}
                   <Route element={<TenantProtectedRoute adminOnly />}>
                     <Route path="/:slug/dashboard" element={<Dashboard />} />
                     <Route path="/:slug/productos" element={<Productos />} />
                     <Route path="/:slug/categorias" element={<Categorias />} />
                     <Route path="/:slug/ventas" element={<Ventas />} />
                     <Route path="/:slug/usuarios" element={<Usuarios />} />
+                    <Route path="/:slug/configuracion" element={<Configuracion />} />  {/* ← NUEVO */}
                   </Route>
-                  {/* Stock: todos */}
-                  <Route path="/:slug/stock" element={<Stock />} />
                 </Route>
               </Route>
 
-              {/* Fallback */}
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </CartProvider>
