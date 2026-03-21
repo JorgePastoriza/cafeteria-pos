@@ -6,9 +6,8 @@ import { useCart } from '../context/CartContext';
 import { useAuth } from '../context/AuthContext';
 import toast from 'react-hot-toast';
 
-const fmt = (n) => `$${parseFloat(n || 0).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
+const formatPrice = (n) => `$${parseFloat(n).toLocaleString('es-AR', { minimumFractionDigits: 0 })}`;
 
-// ── Tarjeta de Producto ──
 function ProductCard({ product, onAdd }) {
   const isLowStock = product.stock <= product.stock_min;
   const outOfStock = product.stock === 0;
@@ -32,7 +31,7 @@ function ProductCard({ product, onAdd }) {
       />
       <div className="product-card-body">
         <div className="product-card-name">{product.name}</div>
-        <div className="product-card-price">{fmt(product.price)}</div>
+        <div className="product-card-price">{formatPrice(product.price)}</div>
         <div className={`product-card-stock ${isLowStock && !outOfStock ? 'low' : ''}`}>
           Stock: {product.stock}
         </div>
@@ -48,18 +47,13 @@ function ProductCard({ product, onAdd }) {
   );
 }
 
-// ── Contenido del Carrito ──
-function CartContent({ onSaleComplete, onClose, slugAPI }) {
-  const {
-    items, paymentMethod, setPaymentMethod,
-    deliveryType, setDeliveryType,
-    deliverySurchargePct,
-    deliverySurchargeAmount,
-    subtotal,
-    removeItem, updateQuantity, clearCart,
-    total, itemCount
-  } = useCart();
+function CartContent({ onSaleComplete, onClose, slugAPI, deliverySurcharge }) {
+  const { items, paymentMethod, setPaymentMethod, removeItem, updateQuantity, clearCart, total, itemCount } = useCart();
   const [loading, setLoading] = useState(false);
+
+  const isDelivery = paymentMethod === 'delivery';
+  const surchargeAmount = isDelivery ? total * (deliverySurcharge / 100) : 0;
+  const finalTotal = total + surchargeAmount;
 
   const handleSale = async () => {
     if (items.length === 0) { toast.error('El carrito está vacío'); return; }
@@ -68,14 +62,17 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
     try {
       const res = await slugAPI.sales.create({
         items: items.map(i => ({ product_id: i.product_id, quantity: i.quantity })),
-        payment_method: paymentMethod,
-        delivery_type: deliveryType      // ← NUEVO
+        payment_method: paymentMethod
       });
-      const saleNum = res.data.sale_number;
-      const isDelivery = deliveryType === 'delivery';
-      toast.success(
-        `✅ Venta ${saleNum} — ${isDelivery ? '🛵 Delivery' : '🏠 Local'}`
-      );
+      const saleData = res.data;
+      if (isDelivery && parseFloat(saleData.delivery_surcharge_amount || 0) > 0) {
+        toast.success(
+          `✅ Venta ${saleData.sale_number} registrada!\n🛵 Recargo: ${formatPrice(saleData.delivery_surcharge_amount)}`,
+          { duration: 4000 }
+        );
+      } else {
+        toast.success(`✅ Venta ${saleData.sale_number} registrada!`);
+      }
       clearCart();
       onSaleComplete?.();
       onClose?.();
@@ -86,7 +83,12 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
     }
   };
 
-  const isDelivery = deliveryType === 'delivery';
+  const paymentOptions = [
+    { key: 'efectivo', icon: '💵', label: 'Efectivo' },
+    { key: 'qr', icon: '📱', label: 'QR' },
+    { key: 'debito', icon: '💳', label: 'Débito' },
+    { key: 'delivery', icon: '🛵', label: 'Delivery' },
+  ];
 
   return (
     <>
@@ -112,14 +114,14 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
           <div key={item.product_id} className="cart-item">
             <div className="cart-item-info">
               <div className="cart-item-name">{item.name}</div>
-              <div className="cart-item-price">{fmt(item.price)} c/u</div>
+              <div className="cart-item-price">{formatPrice(item.price)} c/u</div>
             </div>
             <div className="qty-control">
               <button className="qty-btn" onClick={() => updateQuantity(item.product_id, item.quantity - 1)}>−</button>
               <span className="qty-value">{item.quantity}</span>
               <button className="qty-btn" onClick={() => updateQuantity(item.product_id, item.quantity + 1)}>+</button>
             </div>
-            <div className="cart-item-subtotal">{fmt(item.subtotal)}</div>
+            <div className="cart-item-subtotal">{formatPrice(item.subtotal)}</div>
             <button
               onClick={() => removeItem(item.product_id)}
               style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--danger)', fontSize: 16, padding: '4px', flexShrink: 0 }}
@@ -132,80 +134,56 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
       <div className="cart-footer">
         <div className="separator" />
 
-        {/* ── MODALIDAD DE ENTREGA ── */}
-        <div className="section-title">Modalidad de entrega</div>
-        <div className="payment-methods" style={{ gridTemplateColumns: '1fr 1fr', marginBottom: 12 }}>
-          <button
-            className={`payment-btn ${deliveryType === 'local' ? 'selected' : ''}`}
-            onClick={() => setDeliveryType('local')}
-          >
-            <span className="pay-icon">🏠</span>
-            Local
-          </button>
-          <button
-            className={`payment-btn ${deliveryType === 'delivery' ? 'selected' : ''}`}
-            onClick={() => setDeliveryType('delivery')}
-            style={deliveryType === 'delivery' ? { borderColor: 'var(--warning)', background: 'var(--warning)', color: 'var(--espresso)' } : {}}
-          >
-            <span className="pay-icon">🛵</span>
-            Delivery
-            {deliverySurchargePct > 0 && (
-              <span style={{ fontSize: 10, display: 'block', opacity: 0.85 }}>
-                +{deliverySurchargePct}%
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Resumen de precios */}
-        {isDelivery && deliverySurchargePct > 0 ? (
-          <div style={{
-            background: 'rgba(240,168,48,0.08)',
-            border: '1px solid rgba(240,168,48,0.25)',
-            borderRadius: 'var(--radius-sm)',
-            padding: '10px 14px',
-            marginBottom: 12
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>Subtotal productos</span>
-              <span style={{ fontWeight: 600 }}>{fmt(subtotal)}</span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 6 }}>
-              <span style={{ color: 'var(--text-secondary)' }}>
-                Recargo delivery ({deliverySurchargePct}%)
-              </span>
-              <span style={{ fontWeight: 600, color: 'var(--warning)' }}>
-                + {fmt(deliverySurchargeAmount)}
-              </span>
-            </div>
-            <div style={{ height: 1, background: 'rgba(240,168,48,0.3)', marginBottom: 8 }} />
-            <div className="cart-total-row" style={{ marginBottom: 0 }}>
-              <span className="cart-total-label" style={{ fontWeight: 700 }}>Total delivery</span>
-              <span className="cart-total-value" style={{ color: 'var(--accent-dark)' }}>{fmt(total)}</span>
-            </div>
-          </div>
-        ) : (
-          <div className="cart-total-row">
-            <span className="cart-total-label">Total</span>
-            <span className="cart-total-value">{fmt(total)}</span>
+        {isDelivery && items.length > 0 && (
+          <div className="cart-total-row" style={{ marginBottom: 4 }}>
+            <span className="cart-total-label" style={{ fontSize: 13 }}>Subtotal productos</span>
+            <span style={{ fontWeight: 600, fontSize: 15 }}>{formatPrice(total)}</span>
           </div>
         )}
 
-        {/* ── MÉTODO DE PAGO ── */}
+        {isDelivery && deliverySurcharge > 0 && items.length > 0 && (
+          <div className="cart-total-row" style={{ marginBottom: 8 }}>
+            <span className="cart-total-label" style={{ fontSize: 13, color: 'var(--warning)' }}>
+              🛵 Recargo delivery ({deliverySurcharge}%)
+            </span>
+            <span style={{ fontWeight: 600, fontSize: 15, color: 'var(--warning)' }}>
+              +{formatPrice(surchargeAmount)}
+            </span>
+          </div>
+        )}
+
+        <div className="cart-total-row" style={{ marginBottom: 12 }}>
+          <span className="cart-total-label">Total{isDelivery ? ' final' : ''}</span>
+          <span className="cart-total-value">{formatPrice(finalTotal)}</span>
+        </div>
+
+        {isDelivery && deliverySurcharge === 0 && (
+          <div style={{
+            fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, padding: '6px 10px',
+            background: 'var(--foam)', borderRadius: 6, textAlign: 'center'
+          }}>
+            Sin recargo configurado para delivery
+          </div>
+        )}
+
         <div className="section-title">Método de pago</div>
-        <div className="payment-methods">
-          {[
-            { key: 'efectivo', icon: '💵', label: 'Efectivo' },
-            { key: 'qr', icon: '📱', label: 'QR' },
-            { key: 'debito', icon: '💳', label: 'Débito' }
-          ].map(p => (
+        <div className="payment-methods" style={{ gridTemplateColumns: '1fr 1fr' }}>
+          {paymentOptions.map(p => (
             <button
               key={p.key}
               className={`payment-btn ${paymentMethod === p.key ? 'selected' : ''}`}
               onClick={() => setPaymentMethod(p.key)}
+              style={p.key === 'delivery' && paymentMethod === p.key
+                ? { background: '#1a0a00', color: '#f5c680', borderColor: '#1a0a00' }
+                : {}}
             >
               <span className="pay-icon">{p.icon}</span>
               {p.label}
+              {p.key === 'delivery' && deliverySurcharge > 0 && (
+                <span style={{ fontSize: 10, display: 'block', opacity: 0.8, marginTop: 1 }}>
+                  +{deliverySurcharge}%
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -217,7 +195,8 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
         >
           {loading
             ? <><span className="spinner" /> Procesando...</>
-            : `✓ Confirmar ${isDelivery ? '🛵 Delivery' : 'Venta'} — ${fmt(total)}`}
+            : `✓ Confirmar Venta${isDelivery && finalTotal !== total ? ` · ${formatPrice(finalTotal)}` : ''}`
+          }
         </button>
 
         {items.length > 0 && (
@@ -230,13 +209,10 @@ function CartContent({ onSaleComplete, onClose, slugAPI }) {
   );
 }
 
-// ── POS Principal ──
 export default function POS() {
   const { slug } = useParams();
   const slugAPI = makeSlugAPI(slug);
-  const { tenant } = useAuth();
-  const { setDeliverySurchargePct } = useCart();
-
+  const { isAdmin } = useAuth();
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -244,13 +220,8 @@ export default function POS() {
   const [filterCategory, setFilterCategory] = useState('');
   const [search, setSearch] = useState('');
   const [cartOpen, setCartOpen] = useState(false);
+  const [deliverySurcharge, setDeliverySurcharge] = useState(0);
   const { addItem, itemCount, total } = useCart();
-
-  // Sincronizar el % de delivery del tenant con el CartContext
-  useEffect(() => {
-    const pct = parseFloat(tenant?.delivery_surcharge || 0);
-    setDeliverySurchargePct(pct);
-  }, [tenant?.delivery_surcharge]);
 
   const fetchProducts = useCallback(async () => {
     try {
@@ -266,6 +237,20 @@ export default function POS() {
       setLoading(false);
     }
   }, [filterType, filterCategory, search]);
+
+  // Solo admin puede leer /tenant/settings
+  // Si no es admin o falla (ej: migración no corrida), simplemente no hay recargo
+  useEffect(() => {
+    if (!isAdmin()) return;
+    slugAPI.tenant.getSettings()
+      .then(r => {
+        const pct = parseFloat(r.data.delivery_surcharge);
+        setDeliverySurcharge(isNaN(pct) ? 0 : pct);
+      })
+      .catch(() => {
+        // No bloquear el POS si este endpoint falla
+      });
+  }, []);
 
   useEffect(() => {
     slugAPI.categories.getAll().then(r => setCategories(r.data)).catch(() => {});
@@ -294,7 +279,6 @@ export default function POS() {
   return (
     <>
       <div className="pos-layout">
-        {/* ── PRODUCTOS ── */}
         <div className="pos-products">
           <div className="filters-bar">
             <button
@@ -346,33 +330,34 @@ export default function POS() {
           )}
         </div>
 
-        {/* ── CARRITO DESKTOP ── */}
         <div className="pos-cart">
-          <CartContent onSaleComplete={fetchProducts} slugAPI={slugAPI} />
+          <CartContent
+            onSaleComplete={fetchProducts}
+            slugAPI={slugAPI}
+            deliverySurcharge={deliverySurcharge}
+          />
         </div>
       </div>
 
-      {/* ── FAB MOBILE ── */}
       {itemCount > 0 && (
         <button className="cart-fab" onClick={() => setCartOpen(true)}>
           🛒
           <span className="cart-fab-badge">{itemCount}</span>
-          {fmt(total)}
+          {formatPrice(total)}
         </button>
       )}
 
-      {/* ── DRAWER OVERLAY ── */}
       <div
         className={`cart-drawer-overlay ${cartOpen ? 'open' : ''}`}
         onClick={() => setCartOpen(false)}
       />
 
-      {/* ── CARRITO MOBILE ── */}
       <div className={`pos-cart drawer ${cartOpen ? 'open' : ''}`}>
         <CartContent
           onSaleComplete={fetchProducts}
           onClose={() => setCartOpen(false)}
           slugAPI={slugAPI}
+          deliverySurcharge={deliverySurcharge}
         />
       </div>
     </>
